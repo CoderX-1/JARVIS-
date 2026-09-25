@@ -1,0 +1,5 @@
+{
+  "name": "Jarvis",
+  "face": "board",
+  "bus_dir": "C:/path/to/JARVIS/runtime/signals"
+}

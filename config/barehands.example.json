@@ -1,0 +1,16 @@
+{
+  "name": "Jarvis",
+  "port": 8794,
+  "orbs": [
+    {
+      "title": "Your AI Vault",
+      "path": "C:/path/to/JARVIS/memory/Your AI Vault",
+      "kind": "notes"
+    },
+    {
+      "title": "Props",
+      "path": "media",
+      "kind": "media"
+    }
+  ]
+}

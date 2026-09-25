@@ -1,0 +1,16 @@
+.env
+**/.env
+memory/
+models/
+runtime/
+backups/
+.jarvis/
+.jarvis-stage/
+config/*.json
+!config/*.example.json
+**/__pycache__/
+*.pyc
+*.log
+*.bak
+.venv/
+.florence-venv/
