@@ -58,6 +58,13 @@ trusted channel and do not run scripts from an untrusted or modified copy.
    opening, browser actions, PDF, PPTX, Files shelf, and Recycle Bin on that
    actual laptop. Camera/Android need their respective hardware and setup.
 
+For source-backed PPTX, JARVIS now prefers `gpt-5-mini` if the owner has an
+OpenAI key, then tries Gemini if that request fails. PDF briefs keep Gemini as
+the lower-cost first choice and use OpenAI only when Gemini does not return a
+valid brief. The exact selected evidence quotes are still checked against the
+fetched page excerpts. Successful ZIP/XML verification does not prove the slide
+looks good in PowerPoint: open the deck and review it before presenting.
+
 The installer does not configure a microphone for another laptop and cannot
 guarantee performance on unknown hardware. A school-managed PC may block
 winget, downloaded packages, microphone access, or WebView2; in that case the

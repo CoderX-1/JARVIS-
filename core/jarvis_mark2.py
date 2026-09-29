@@ -1778,8 +1778,9 @@ class Mark2Runtime:
         if len(set(urls)) != len(urls):
             return "error: source URLs must be distinct"
         key = (os.getenv("GEMINI_API_KEY") or "").strip()
-        if not key:
-            return "error: GEMINI_API_KEY is not configured for professional synthesis"
+        openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if not key and not openai_key:
+            return "error: configure GEMINI_API_KEY or OPENAI_API_KEY for professional synthesis"
         # Slide synthesis favors quality; PDF briefs keep their lower-cost path.
         # Both remain independent of the low-latency conversation model.
         model = (os.getenv("GEMINI_PRESENTATION_MODEL") or "gemini-3.7-flash").strip() if artifact_format == "pptx" else (os.getenv("GEMINI_REPORT_MODEL") or "gemini-3.5-flash-lite").strip()
@@ -1810,32 +1811,61 @@ class Mark2Runtime:
         if self.windows_control.action_abort_requested():
             return "error: action deadline expired after source reading"
         try:
-            attempts = 1
-            try:
-                brief = synthesize_public_brief(clean_topic, pages, key, model)
-            except RuntimeError as exc:
-                # A presentation-quality model may not be enabled on every
-                # Gemini project. 404 means unavailable; 503 is transient.
-                # Never hide auth, quota, or malformed-request failures.
-                retryable = ("HTTP 503" in str(exc) or
-                             (artifact_format == "pptx" and "HTTP 404" in str(exc)))
-                if not retryable:
-                    raise
-                if artifact_format == "pptx" and (os.getenv("OPENAI_API_KEY") or "").strip():
-                    fallback = (os.getenv("OPENAI_PRESENTATION_MODEL") or "gpt-5-mini").strip()
-                    if self.windows_control.action_abort_requested():
-                        raise
-                    attempts = 2
+            attempts = 0
+            brief = None
+            first_error = None
+            # Presentations favor a confirmed, quality-oriented OpenAI route.
+            # PDF briefs retain Gemini's lower-cost default. Only one backup
+            # provider is tried; every candidate uses the same evidence guard.
+            openai_first = artifact_format == "pptx" and bool(openai_key)
+            if openai_first:
+                attempts += 1
+                try:
                     brief = synthesize_openai_brief(
-                        clean_topic, pages, os.getenv("OPENAI_API_KEY", "").strip(), fallback)
-                else:
+                        clean_topic, pages, openai_key,
+                        (os.getenv("OPENAI_PRESENTATION_MODEL") or "gpt-5-mini").strip())
+                except (RuntimeError, ValueError) as exc:
+                    first_error = exc
+                    if not key:
+                        raise
+                    if self.windows_control.action_abort_requested():
+                        return "error: action deadline expired before backup synthesis"
+            if brief is None and key:
+                if self.windows_control.action_abort_requested():
+                    return "error: action deadline expired before Gemini synthesis"
+                attempts += 1
+                try:
+                    brief = synthesize_public_brief(clean_topic, pages, key, model)
+                except RuntimeError as exc:
+                    first_error = exc
                     fallback = ((os.getenv("GEMINI_PRESENTATION_FALLBACK_MODEL") or "gemini-3.5-flash")
                                 if artifact_format == "pptx" else
                                 (os.getenv("GEMINI_REPORT_FALLBACK_MODEL") or "gemini-2.5-flash")).strip()
-                    if fallback == model or self.windows_control.action_abort_requested():
+                    retryable = ("HTTP 503" in str(exc) or
+                                 (artifact_format == "pptx" and "HTTP 404" in str(exc)))
+                    if not retryable:
                         raise
-                    attempts = 2
-                    brief = synthesize_public_brief(clean_topic, pages, key, fallback)
+                    if retryable and fallback != model and not self.windows_control.action_abort_requested():
+                        attempts += 1
+                        try:
+                            brief = synthesize_public_brief(clean_topic, pages, key, fallback)
+                        except RuntimeError as fallback_exc:
+                            fallback_retryable = ("HTTP 503" in str(fallback_exc) or
+                                                  (artifact_format == "pptx" and "HTTP 404" in str(fallback_exc)))
+                            if not fallback_retryable:
+                                raise
+                            first_error = fallback_exc
+                    elif not openai_key or openai_first:
+                        raise
+            if brief is None and openai_key and not openai_first:
+                if self.windows_control.action_abort_requested():
+                    return "error: action deadline expired before OpenAI backup synthesis"
+                attempts += 1
+                brief = synthesize_openai_brief(
+                    clean_topic, pages, openai_key,
+                    (os.getenv("OPENAI_REPORT_FALLBACK_MODEL") or "gpt-5-mini").strip())
+            if brief is None:
+                raise first_error or RuntimeError("No synthesis provider returned a brief")
             if self.windows_control.action_abort_requested():
                 return "error: action deadline expired after synthesis"
             sources = []
@@ -1884,8 +1914,9 @@ class Mark2Runtime:
         brave_key = (os.getenv("BRAVE_SEARCH_API_KEY") or "").strip()
         if not brave_key:
             return "error: BRAVE_SEARCH_API_KEY is not configured for topic discovery"
-        if not (os.getenv("GEMINI_API_KEY") or "").strip():
-            return "error: GEMINI_API_KEY is not configured for professional synthesis"
+        if not ((os.getenv("GEMINI_API_KEY") or "").strip() or
+                (os.getenv("OPENAI_API_KEY") or "").strip()):
+            return "error: configure GEMINI_API_KEY or OPENAI_API_KEY for professional synthesis"
         if self.windows_control.action_abort_requested():
             return "error: action deadline expired before discovery"
         try:
