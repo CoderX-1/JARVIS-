@@ -115,6 +115,19 @@ class FakeClient:
 
 
 class SpeechRouterTests(unittest.TestCase):
+    def test_colloquial_roman_urdu_routes_to_accent_direction(self):
+        router = load_router()
+        for phrase in ("Bhai kia kar rha hai?", "Bht kharab accent hai yar",
+                       "Mujhe sahi se batao", "Ye app kal chalegi kya?"):
+            self.assertTrue(router.looks_like_roman_urdu(phrase), phrase)
+            delivery, latency, speed, selected = router._fish_delivery(phrase, {})
+            self.assertTrue(selected)
+            self.assertTrue(delivery.startswith("[speaking natural Pakistani Urdu"))
+            self.assertEqual(delivery.rsplit("] ", 1)[-1], phrase)
+            self.assertEqual(latency, "balanced")
+            self.assertEqual(speed, 1.0)
+        self.assertFalse(router.looks_like_roman_urdu("Open the calculator application"))
+
     def test_stt_and_tts_circuits_use_independent_cooldowns(self):
         router = load_router({"speech": {
             "failure_cooldown_s": 90,

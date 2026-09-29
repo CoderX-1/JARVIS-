@@ -1,9 +1,11 @@
 param(
     [switch]$NoBrowser,
+    [switch]$Desktop,
     [switch]$InteractiveRelaunch
 )
 
 $ErrorActionPreference = "Stop"
+if ($Desktop) { $NoBrowser = $true }
 
 $root = $PSScriptRoot
 $components = Join-Path $root "components"
@@ -61,6 +63,7 @@ function Restart-InInteractiveDesktop {
         '-File', ('"' + $PSCommandPath + '"'), '-InteractiveRelaunch'
     )
     if ($NoBrowser) { $arguments += '-NoBrowser' }
+    if ($Desktop) { $arguments += '-Desktop' }
     $shell = New-Object -ComObject Shell.Application
     $shell.ShellExecute(
         'powershell.exe', ($arguments -join ' '), $root, '', 0
@@ -79,7 +82,8 @@ if (-not (Test-InteractiveDesktop)) {
 }
 
 function Import-DotEnv {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path,
+          [string[]]$AllowedNames = @())
     if (-not (Test-Path -LiteralPath $Path)) {
         throw "Missing private environment file: $Path"
     }
@@ -90,7 +94,8 @@ function Import-DotEnv {
         $name, $value = $trimmed.Split("=", 2)
         $name = $name.Trim()
         $value = $value.Trim().Trim('"').Trim("'")
-        if ($name -match '^[A-Za-z_][A-Za-z0-9_]*$') {
+        if ($name -match '^[A-Za-z_][A-Za-z0-9_]*$' -and
+                ($AllowedNames.Count -eq 0 -or $AllowedNames -contains $name)) {
             [Environment]::SetEnvironmentVariable($name, $value, "Process")
         }
     }
@@ -142,7 +147,48 @@ if (-not (Test-Path -LiteralPath $backtalkPython)) {
 
 New-Item -ItemType Directory -Force -Path $logs, (Join-Path $runtime "signals"),
     $models | Out-Null
-Import-DotEnv (Join-Path $root ".env")
+$envFile = Join-Path $root ".env"
+# The sign-in process inherits only Supabase's public project configuration,
+# never model-provider API keys loaded for the voice process later.
+Import-DotEnv $envFile -AllowedNames @("SUPABASE_URL", "SUPABASE_ANON_KEY",
+    "JARVIS_AUTH_REQUIRED")
+
+# Auth is deliberately opt-in until the Supabase project/user is configured
+# and the owner has passed a live login test. Once enabled, cancel/failure
+# stops startup before the microphone, face, or agent services are launched.
+if ($Desktop -and $env:JARVIS_AUTH_REQUIRED -eq "1") {
+    $authPython = Join-Path $runtime "desktop-venv\Scripts\python.exe"
+    $authGate = Join-Path $root "desktop\auth_gate.py"
+    if (-not (Test-Path -LiteralPath $authPython) -or
+            -not (Test-Path -LiteralPath $authGate)) {
+        throw "JARVIS sign-in runtime is missing; no services were started."
+    }
+    $inheritedProviderSecrets = @{}
+    foreach ($secretName in @("OPENAI_API_KEY", "GEMINI_API_KEY", "AI_API_KEY",
+            "FISH_API_KEY", "FISH_AUDIO_API_KEY", "ELEVENLABS_API_KEY",
+            "BRAVE_SEARCH_API_KEY")) {
+        $secretValue = [Environment]::GetEnvironmentVariable($secretName, "Process")
+        if ($null -ne $secretValue) {
+            $inheritedProviderSecrets[$secretName] = $secretValue
+            [Environment]::SetEnvironmentVariable($secretName, $null, "Process")
+        }
+    }
+    try {
+        & $authPython $authGate
+        if ($LASTEXITCODE -ne 0) {
+            throw "JARVIS sign-in was cancelled or failed; no services were started."
+        }
+    }
+    finally {
+        foreach ($secretName in $inheritedProviderSecrets.Keys) {
+            [Environment]::SetEnvironmentVariable(
+                $secretName, $inheritedProviderSecrets[$secretName], "Process")
+        }
+    }
+}
+Remove-Item Env:\SUPABASE_ANON_KEY -ErrorAction SilentlyContinue
+Import-DotEnv $envFile
+Remove-Item Env:\SUPABASE_ANON_KEY -ErrorAction SilentlyContinue
 
 $env:BACKTALK_CONFIG = Join-Path $config "backtalk.json"
 $env:BAREHANDS_CONFIG = Join-Path $config "barehands.json"
@@ -151,7 +197,28 @@ $env:BACKTALK_LOG = Join-Path $logs "backtalk.log"
 $env:HF_HOME = Join-Path $models "huggingface"
 $env:JARVIS_FLORENCE_ENABLED = "0"
 
-$python = (Get-Command python -ErrorAction Stop).Source
+# Use the app-owned runtime. A clean installation must not depend on a
+# machine-wide Python command still being on PATH after setup.
+$python = $backtalkPython
+
+function Start-DesktopCockpit {
+    $desktopApp = Join-Path $root "desktop\board_app.py"
+    $pythonw = Join-Path $runtime "desktop-venv\Scripts\pythonw.exe"
+    if (-not (Test-Path -LiteralPath $desktopApp)) {
+        throw "Missing desktop app: $desktopApp"
+    }
+    if (-not (Test-Path -LiteralPath $pythonw)) {
+        throw "Missing Board cockpit runtime: $pythonw. Install pywebview in runtime\desktop-venv first."
+    }
+    # UI attaches to the existing local bridge. Provider keys stay in the
+    # voice process and are never inherited by this new WebView2 window.
+    foreach ($secretName in @("OPENAI_API_KEY", "GEMINI_API_KEY",
+            "AI_API_KEY", "FISH_API_KEY", "FISH_AUDIO_API_KEY",
+            "ELEVENLABS_API_KEY")) {
+        [Environment]::SetEnvironmentVariable($secretName, $null, "Process")
+    }
+    return Start-Process $pythonw -ArgumentList ('"' + $desktopApp + '"') -WorkingDirectory (Join-Path $root "desktop") -PassThru -RedirectStandardError (Join-Path $logs "desktop-error.log") -RedirectStandardOutput (Join-Path $logs "desktop.log")
+}
 
 try {
     # Keep the launcher itself single-instance for its entire lifetime.  The
@@ -173,6 +240,10 @@ try {
 
     if (-not $ownsLauncherMutex) {
         Write-Host "JARVIS is already starting or running. Reusing the existing instance." -ForegroundColor Yellow
+        if ($Desktop) {
+            Start-DesktopCockpit | Out-Null
+            Write-Host "Board cockpit attached to the existing JARVIS session." -ForegroundColor Cyan
+        }
         if (-not $NoBrowser -and (Test-LocalPort 8790)) {
             Start-Process "http://127.0.0.1:8790/"
         }
@@ -183,6 +254,10 @@ try {
     # start a second keyboard hook or microphone owner.
     if (Test-LocalPort 8791) {
         Write-Host "JARVIS voice is already running. No duplicate was started." -ForegroundColor Yellow
+        if ($Desktop) {
+            Start-DesktopCockpit | Out-Null
+            Write-Host "Board cockpit attached to the existing JARVIS session." -ForegroundColor Cyan
+        }
         if (-not $NoBrowser -and (Test-LocalPort 8790)) {
             Start-Process "http://127.0.0.1:8790/"
         }
@@ -249,6 +324,10 @@ try {
     $voice = Get-Process -Id $voiceOwnerId -ErrorAction Stop
     if ($voice.Id -ne $voiceBootstrap.Id) {
         $started += $voice
+    }
+    if ($Desktop) {
+        $started += Start-DesktopCockpit
+        Write-Host "Desktop cockpit opened. Closing this launcher stops JARVIS." -ForegroundColor Cyan
     }
     $voice.WaitForExit()
     $voice.Refresh()

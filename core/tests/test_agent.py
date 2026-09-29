@@ -9,6 +9,18 @@ from unittest.mock import patch
 import agent
 
 
+class RecycleIntentTests(unittest.TestCase):
+    def test_explicit_created_file_delete_only(self):
+        for prompt in ("delete my recent presentation", "recycle the PDF report",
+                       "ye deck hatao", "presentation delete karo"):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(agent.explicit_recycle_request(prompt))
+        for prompt in ("don't delete the presentation", "report delete mat karo",
+                       "list my presentations", "delete an arbitrary file"):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(agent.explicit_recycle_request(prompt))
+
+
 class ProviderConfigTests(unittest.TestCase):
     def test_gemini_is_inferred_from_its_key(self):
         env = {
@@ -54,6 +66,20 @@ class FakeAgent(agent.LocalAgent):
 
 
 class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_voice_recycle_tool_requires_explicit_current_turn_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = agent.ProviderConfig("openai", "test", agent.OPENAI_BASE_URL, "test-model")
+            runner = agent.LocalAgent(config, Path(tmp), "instructions", auto_approve=True)
+            args = {"id": "reports/demo.pdf", "version": "1:2"}
+            with patch.object(runner.mark2, "execute", return_value="recycled and verified: reports/demo.pdf") as execute:
+                denied = await runner._run_tool("recycle_created_file", args)
+                self.assertIn("explicit user request", denied)
+                execute.assert_not_called()
+                runner._recycle_created_file_requested = True
+                allowed = await runner._run_tool("recycle_created_file", args)
+                self.assertIn("recycled and verified", allowed)
+                execute.assert_called_once_with("recycle_created_file", args)
+
     async def test_tool_call_writes_and_returns_final_answer(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

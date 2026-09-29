@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="session-token" content="__JARVIS_SESSION_TOKEN__">
+  <meta name="board-url" content="__JARVIS_BOARD_URL__">
+  <meta name="spatial-url" content="__JARVIS_SPATIAL_URL__">
+  <title>JARVIS — Board cockpit</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/files.css">
+  <link rel="stylesheet" href="/assets/spatial.css">
+  <script type="importmap">__JARVIS_IMPORT_MAP__</script>
+  <script defer src="/assets/board-core.js"></script>
+  <script defer src="/assets/board-direct.js"></script>
+  <script defer src="/assets/app.js"></script>
+  <script type="module" src="/assets/spatial-direct.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="identity" aria-label="JARVIS desktop cockpit">
+        <span class="identity-mark" aria-hidden="true">J</span>
+        <span class="identity-copy"><strong>JARVIS</strong><small>Board cockpit</small></span>
+      </div>
+      <nav class="views" aria-label="Cockpit views">
+        <button class="view-tab selected" data-view="board" aria-current="page">Board</button>
+        <button class="view-tab" data-view="spatial">Spatial</button>
+        <button class="view-tab" data-view="activity">Activity</button>
+        <button class="view-tab" data-view="abilities">Abilities</button>
+        <button class="view-tab" data-view="files">Files</button>
+        <button class="view-tab" data-view="android">Android</button>
+      </nav>
+      <div class="connection" id="connection" role="status" aria-live="polite">
+        <span class="connection-light" aria-hidden="true"></span>
+        <span id="connectionText">Connecting</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="mainstage" aria-label="Selected workspace">
+        <div class="view visible board-view" id="view-board">
+          <div id="boardMount" class="board-mount" tabindex="0"
+               aria-label="Original JARVIS Board renderer mounted in the app"></div>
+          <div class="board-offline" id="boardOffline" hidden>
+            <h1>Board signal unavailable</h1>
+            <p>Start JARVIS to connect the original Board face. Voice and chat stay separate from this display.</p>
+          </div>
+          <div class="board-tools">
+            <span id="voiceState">Voice offline</span>
+            <span id="spatialState">Spatial offline</span>
+            <button id="spatialView" type="button" title="Open the spatial board inside this app">Spatial board</button>
+          </div>
+        </div>
+
+        <div class="view spatial-view" id="view-spatial" hidden>
+          <div id="spatialMount" class="spatial-mount" tabindex="0"
+               aria-label="Original JARVIS Spatial renderer mounted in the app"></div>
+          <div class="board-offline" id="spatialOffline" hidden>
+            <h1>Spatial board unavailable</h1>
+            <p>The spatial service is offline. Board and conversation can still work independently.</p>
+          </div>
+          <div class="board-tools">
+            <span id="spatialVoiceState">Checking Spatial</span>
+            <button id="spatialCamera" type="button">Try hand tracking</button>
+          </div>
+        </div>
+
+        <div class="view info-view" id="view-activity" hidden>
+          <div class="view-heading"><h1>Activity</h1><p>What JARVIS actually observed, delivered, or verified.</p></div>
+          <div class="task-summary" id="taskSummary">No task plan yet.</div>
+          <div class="activity-list" id="activityList" aria-live="polite"></div>
+        </div>
+
+        <div class="view info-view" id="view-abilities" hidden>
+          <div class="view-heading"><h1>Abilities</h1><p>Registered tools—not a claim that every app, provider, or device is available.</p></div>
+          <label class="search-label" for="abilitySearch">Find a capability</label>
+          <input id="abilitySearch" type="search" autocomplete="off" placeholder="Search tools and descriptions">
+          <p class="summary-line" id="abilitySummary">Reading installed registry…</p>
+          <div class="abilities-list" id="abilitiesList"></div>
+        </div>
+
+        <div class="view info-view" id="view-files" hidden>
+          <div class="view-heading"><h1>Created files</h1><p>Reports, presentations, and saved apps inside this JARVIS install.</p></div>
+          <h2>Reports and presentations</h2>
+          <button class="secondary-action" id="preparePresentation" type="button" hidden>Draft a presentation request</button>
+          <p class="quiet" id="presentationHint" hidden>This fills the chat box. Review the topic before sending.</p>
+          <div id="reportsList" class="file-list"></div>
+          <h2>Saved apps</h2>
+          <p class="quiet">Ask JARVIS to launch an app; it will re-check the stored bundle first.</p>
+          <div id="appsList" class="file-list"></div>
+        </div>
+
+        <div class="view info-view" id="view-android" hidden>
+          <div class="view-heading"><h1>Android</h1><p>Configuration is not the same as a verified phone connection.</p></div>
+          <p class="device-state" id="androidStatus">Checking local setup…</p>
+          <button class="secondary-action" id="prepareAndroid" type="button">Prepare a phone-status request</button>
+          <p class="quiet">This fills the chat box. It does not contact the phone until you send it.</p>
+        </div>
+      </section>
+
+      <aside class="conversation" aria-label="Conversation">
+        <div class="conversation-heading"><h2>Conversation</h2><span id="turnState">Waiting</span></div>
+        <div class="messages" id="messages" role="log" aria-live="polite">
+          <p class="empty-chat" id="emptyChat">Talk with HOME or type a mission below. Both use the same JARVIS session.</p>
+        </div>
+        <p class="form-error" id="formError" role="alert" hidden></p>
+        <form id="composer" class="composer">
+          <label for="prompt" class="sr-only">Message JARVIS</label>
+          <textarea id="prompt" rows="2" maxlength="4000" placeholder="Ask JARVIS to do something…"></textarea>
+          <button id="sendButton" type="submit">Send</button>
+        </form>
+        <p class="input-hint">Enter to send · Shift+Enter new line · Ctrl+L to type · Hold HOME to speak</p>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>

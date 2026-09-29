@@ -64,6 +64,7 @@ import time
 from backtalk import signals
 from backtalk.brain import WarmBrain
 from backtalk.config import CFG
+from backtalk.desktop_bridge import DesktopBridge
 from backtalk.ears import (Ears, explain_audio_failure, record_held,
                            warm as warm_ears)
 from backtalk.mouth import (Mouth, preload_local_voice_runtime,
@@ -580,7 +581,8 @@ def _typed_reader(q: "queue.Queue[str]"):
                 sys.stdout.flush()
 
 
-async def speak_reply(brain: WarmBrain, mouth: Mouth, text: str):
+async def speak_reply(brain: WarmBrain, mouth: Mouth, text: str,
+                      desktop_bridge: DesktopBridge | None = None):
     """First sentence ships alone (fast start); the rest go in
     2-sentence breaths — fuller chunks get livelier prosody (single
     short sentences come out flat)."""
@@ -618,6 +620,8 @@ async def speak_reply(brain: WarmBrain, mouth: Mouth, text: str):
         async for sentence in brain.ask_stream(text):
             emit(sentence)
         if spoken:
+            if desktop_bridge is not None:
+                desktop_bridge.publish("assistant", " ".join(spoken))
             # The OpenAI-compatible bridge yields only after the whole model
             # reply exists. One TTS request therefore keeps the same latency
             # while preserving scarce Gemini free-tier requests.
@@ -721,6 +725,15 @@ async def amain():
 
     speak_task: asyncio.Task | None = None
     typed_q: "queue.Queue[str]" = queue.Queue()
+    desktop_bridge = DesktopBridge(typed_q, CFG["signals_dir"])
+    try:
+        desktop_bridge.start()
+        log("[desktop] typed-turn bridge ready on 127.0.0.1:8792")
+    except Exception as exc:
+        # Desktop transport is optional; a port conflict must never kill the
+        # working microphone/voice session.
+        log(f"[desktop] bridge unavailable: {exc!r}")
+        desktop_bridge = None
     threading.Thread(target=_typed_reader, args=(typed_q,), daemon=True).start()
     typed_fut: asyncio.Future | None = None
 
@@ -863,6 +876,8 @@ async def amain():
         told apart from speech that began before the ask even existed."""
         nonlocal speak_task
         log(f"[you]    {text}")
+        if desktop_bridge is not None:
+            desktop_bridge.publish("user", text)
         # A pending spoken permission ask owns the next utterance IF
         # that utterance started after the ask was posed. Speech that
         # began earlier is the user interrupting the turn, not
@@ -934,7 +949,8 @@ async def amain():
         # wait on a ResultMessage the CLI is withholding for an answer.
         _deny_pending()
         await brain.reset_turn()
-        speak_task = asyncio.create_task(speak_reply(brain, mouth, text))
+        speak_task = asyncio.create_task(speak_reply(
+            brain, mouth, text, desktop_bridge))
         return True
 
     try:
@@ -1063,6 +1079,8 @@ async def amain():
     except KeyboardInterrupt:
         pass
     finally:
+        if desktop_bridge is not None:
+            desktop_bridge.stop()
         _MIC["gen"] += 1     # abort any live open-mic capture promptly
         # Cancelling a Future cannot stop a blocking executor thread.
         if "ptt" in locals():

@@ -1,0 +1,13 @@
+.file-item .file-details { min-width: 0; flex: 1; }
+.file-item .file-details strong { display: block; overflow-wrap: anywhere; }
+.file-item .file-details p { line-height: 1.55; }
+.file-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; flex: none; }
+.file-item .recycle-action { color: var(--muted); }
+.file-item .recycle-action:hover { color: var(--red); border-color: var(--red); }
+.file-item .recycle-confirm { color: var(--red); border-color: var(--red); }
+.file-item .recycle-confirm:hover { background: #371b1e; }
+.file-item button:disabled { opacity: .5; cursor: wait; }
+@media (max-width: 620px) {
+  .file-item { align-items: flex-start; flex-direction: column; }
+  .file-actions { justify-content: flex-start; }
+}

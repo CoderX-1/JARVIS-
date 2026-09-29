@@ -14,3 +14,5 @@ config/*.json
 *.bak
 .venv/
 .florence-venv/
+*private-release*.zip
+*.secrets.json

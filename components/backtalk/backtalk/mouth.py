@@ -410,7 +410,7 @@ def synth_stream(text: str, timeout: float = 30.0):
                     "trying the next cloud provider",
                 )
                 continue
-            generator = stream_fish_tts(text)
+            synthesizer = stream_fish_tts
         elif provider == "gemini":
             if not gemini_tts_enabled():
                 _warn_provider_once(
@@ -419,13 +419,15 @@ def synth_stream(text: str, timeout: float = 30.0):
                     "trying the next provider",
                 )
                 continue
-            generator = stream_gemini_tts(text)
+            synthesizer = stream_gemini_tts
         else:
             continue
         attempted.append(provider)
         cloud_started = False
         try:
-            for rate, pcm in generator:
+            # Provider setup can fail before it returns a generator. Keep
+            # construction inside the same fallback boundary as iteration.
+            for rate, pcm in synthesizer(text):
                 cloud_started = True
                 yield rate, pcm
             if cloud_started:
@@ -433,7 +435,12 @@ def synth_stream(text: str, timeout: float = 30.0):
         except Exception as exc:
             if cloud_started:
                 # Never splice two voices into the middle of one sentence.
-                return
+                # A truncated reply must be reported rather than silently
+                # treated as successful.
+                raise RuntimeError(
+                    f"{provider} TTS stream stopped after partial audio; "
+                    "spoken reply may be incomplete"
+                ) from exc
             log(f"[mouth] {provider} produced no audio "
                 f"({type(exc).__name__}); trying cloud fallback")
     if not _local_tts_allowed():
@@ -541,7 +548,12 @@ class Mouth:
             try:
                 self._play_stream(sentence, directions)
             except Exception as e:
-                log(f"[mouth] synth/play error: {e}")
+                # SDK exceptions may include private URLs or request data.
+                log(f"[mouth] synth/play error: {type(e).__name__}; "
+                    f"audible={str(self._audible.is_set()).lower()}")
+                log("[voice] Speech delivery failed or ended early. "
+                    "If this was a reply, its text remains in the console. "
+                    "Use a new request to retry; no automatic repeat was sent.")
             finally:
                 if self._q.empty():
                     self._speaking.clear()
