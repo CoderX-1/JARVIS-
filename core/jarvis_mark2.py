@@ -1837,7 +1837,7 @@ class Mark2Runtime:
                     attempts = 2
                     brief = synthesize_public_brief(clean_topic, pages, key, fallback)
             if self.windows_control.action_abort_requested():
-                return "error: action deadline expired after Gemini synthesis"
+                return "error: action deadline expired after synthesis"
             sources = []
             for index, (url, page) in enumerate(zip(urls, pages), 1):
                 final_url = str(page.get("final_url") or url)
