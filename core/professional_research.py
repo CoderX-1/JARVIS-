@@ -141,13 +141,7 @@ def _validate_brief(data: dict[str, Any], pages: list[dict[str, Any]],
     return {"summary": summary, "findings": findings, "potential_tensions": tensions}
 
 
-def synthesize_public_brief(topic: str, pages: list[dict[str, Any]],
-                            api_key: str, model: str) -> dict[str, Any]:
-    """Return a validated concise brief; never search the web or store input."""
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not configured")
-    if not re.fullmatch(r"gemini-[A-Za-z0-9.-]{3,80}", model):
-        raise ValueError("Invalid Gemini report model")
+def _brief_prompt(topic: str, pages: list[dict[str, Any]]) -> tuple[str, str, list[dict[str, str]]]:
     if not 1 <= len(pages) <= 3:
         raise ValueError("Provide 1 to 3 fetched source pages")
     evidence = _evidence_candidates(pages)
@@ -171,6 +165,17 @@ def synthesize_public_brief(topic: str, pages: list[dict[str, Any]],
         "subject and scope. This is a review flag, not a verdict. Otherwise return an empty array."
     )
     user_data = json.dumps({"topic": _compact(topic, 200), "evidence": evidence}, ensure_ascii=False)
+    return system_instruction, user_data, evidence
+
+
+def synthesize_public_brief(topic: str, pages: list[dict[str, Any]],
+                            api_key: str, model: str) -> dict[str, Any]:
+    """Return a validated concise brief; never search the web or store input."""
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not configured")
+    if not re.fullmatch(r"gemini-[A-Za-z0-9.-]{3,80}", model):
+        raise ValueError("Invalid Gemini report model")
+    system_instruction, user_data, evidence = _brief_prompt(topic, pages)
     generation = {"responseMimeType": "application/json",
                   "temperature": 0.2, "maxOutputTokens": 2_200}
     if model.startswith("gemini-2.5-flash"):
@@ -203,6 +208,46 @@ def synthesize_public_brief(topic: str, pages: list[dict[str, Any]],
         raise RuntimeError("Gemini report response was malformed") from exc
     brief = _validate_brief(brief_data, pages, evidence)
     usage = response_data.get("usageMetadata") or {}
-    brief["usage"] = {"model": model,
+    brief["usage"] = {"provider": "Gemini", "model": model,
                        "tokens_reported": usage.get("totalTokenCount") if isinstance(usage.get("totalTokenCount"), int) else None}
+    return brief
+
+
+def synthesize_openai_brief(topic: str, pages: list[dict[str, Any]],
+                            api_key: str, model: str) -> dict[str, Any]:
+    """Bounded Chat Completions JSON fallback with the same evidence validator."""
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY is not configured")
+    if not re.fullmatch(r"gpt-[A-Za-z0-9.-]{3,80}", model):
+        raise ValueError("Invalid OpenAI report model")
+    system_instruction, user_data, evidence = _brief_prompt(topic, pages)
+    payload = {"model": model,
+               "messages": [{"role": "system", "content": system_instruction},
+                            {"role": "user", "content": user_data}],
+               "response_format": {"type": "json_object"},
+               "max_completion_tokens": 3_500}
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            raw = response.read(128_001)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"OpenAI report request failed (HTTP {exc.code})") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("OpenAI report request is unavailable") from exc
+    if len(raw) > 128_000:
+        raise RuntimeError("OpenAI report response exceeded the size limit")
+    try:
+        response_data = json.loads(raw.decode("utf-8"))
+        brief_data = json.loads(response_data["choices"][0]["message"]["content"])
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("OpenAI report response was malformed") from exc
+    brief = _validate_brief(brief_data, pages, evidence)
+    usage = response_data.get("usage") or {}
+    brief["usage"] = {"provider": "OpenAI", "model": model,
+                       "tokens_reported": usage.get("total_tokens") if isinstance(usage.get("total_tokens"), int) else None}
     return brief

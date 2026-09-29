@@ -32,7 +32,7 @@ from interaction_guard import InteractionGuard
 from knowledge_index import KnowledgeIndex
 from pc_diagnostics import snapshot as pc_diagnostics_snapshot
 from presentation_decks import create_evidence_presentation
-from professional_research import synthesize_public_brief
+from professional_research import synthesize_openai_brief, synthesize_public_brief
 from source_discovery import discover_public_urls, same_underlying_source
 from verification_engine import VerificationEngine
 from voice_health import summarize_voice_log
@@ -1821,13 +1821,21 @@ class Mark2Runtime:
                              (artifact_format == "pptx" and "HTTP 404" in str(exc)))
                 if not retryable:
                     raise
-                fallback = ((os.getenv("GEMINI_PRESENTATION_FALLBACK_MODEL") or "gemini-3.5-flash")
-                            if artifact_format == "pptx" else
-                            (os.getenv("GEMINI_REPORT_FALLBACK_MODEL") or "gemini-2.5-flash")).strip()
-                if fallback == model or self.windows_control.action_abort_requested():
-                    raise
-                attempts = 2
-                brief = synthesize_public_brief(clean_topic, pages, key, fallback)
+                if artifact_format == "pptx" and (os.getenv("OPENAI_API_KEY") or "").strip():
+                    fallback = (os.getenv("OPENAI_PRESENTATION_MODEL") or "gpt-5-mini").strip()
+                    if self.windows_control.action_abort_requested():
+                        raise
+                    attempts = 2
+                    brief = synthesize_openai_brief(
+                        clean_topic, pages, os.getenv("OPENAI_API_KEY", "").strip(), fallback)
+                else:
+                    fallback = ((os.getenv("GEMINI_PRESENTATION_FALLBACK_MODEL") or "gemini-3.5-flash")
+                                if artifact_format == "pptx" else
+                                (os.getenv("GEMINI_REPORT_FALLBACK_MODEL") or "gemini-2.5-flash")).strip()
+                    if fallback == model or self.windows_control.action_abort_requested():
+                        raise
+                    attempts = 2
+                    brief = synthesize_public_brief(clean_topic, pages, key, fallback)
             if self.windows_control.action_abort_requested():
                 return "error: action deadline expired after Gemini synthesis"
             sources = []

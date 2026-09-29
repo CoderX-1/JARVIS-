@@ -383,10 +383,11 @@ def create_research_pdf(
             ))
         report_usage = dossier.get("report_usage")
         if isinstance(report_usage, dict):
+            provider = escape(_clean(report_usage.get("provider"), 40))
             model = escape(_clean(report_usage.get("model"), 90))
             tokens = report_usage.get("tokens_reported")
             token_label = f"; {tokens:,} tokens reported" if isinstance(tokens, int) and tokens >= 0 else ""
-            story.append(Paragraph(f"Synthesis model: {model or 'Gemini'}{token_label}. "
+            story.append(Paragraph(f"Synthesis: {provider + ' / ' if provider else ''}{model or 'model unavailable'}{token_label}. "
                                    "Usage is not a billing invoice.", brief_small))
             attempts = report_usage.get("synthesis_requests")
             if isinstance(attempts, int) and attempts > 1:
@@ -447,9 +448,9 @@ def create_research_pdf(
                 ),
                 "brave_search_requests": _bounded_count(report_usage.get("discovery_requests"), 8)
                 if professional and report_usage.get("discovery_provider") == "Brave Search API" else 0,
-                "gemini_synthesis_requests": _bounded_count(report_usage.get("synthesis_requests"), 4)
+                "synthesis_requests": _bounded_count(report_usage.get("synthesis_requests"), 4)
                 if professional else 0,
-                "gemini_tokens_reported": _bounded_count(report_usage.get("tokens_reported"))
+                "synthesis_tokens_reported": _bounded_count(report_usage.get("tokens_reported"))
                 if professional else 0,
                 "verification": "PDF content and pages rendered; visual review still required"}
     finally:

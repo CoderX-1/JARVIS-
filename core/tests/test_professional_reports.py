@@ -10,7 +10,8 @@ from unittest.mock import patch
 from document_reports import _verify_rendered_pdf, create_research_pdf
 from harness_context import route_lanes, select_tools
 from jarvis_mark2 import MARK2_TOOLS, Mark2Runtime
-from professional_research import _editorial_cut, _evidence_candidates, _supported_prose, _validate_brief, synthesize_public_brief
+from professional_research import (_editorial_cut, _evidence_candidates, _supported_prose,
+                                   _validate_brief, synthesize_openai_brief, synthesize_public_brief)
 from source_discovery import discover_public_urls, same_underlying_source
 
 
@@ -137,6 +138,32 @@ class ProfessionalResearchTests(unittest.TestCase):
         with patch("professional_research.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(payload).encode())):
             with self.assertRaisesRegex(ValueError, "every source exactly once"):
                 synthesize_public_brief("Project update", PAGES, "fake-key", "gemini-2.5-flash")
+
+    def test_openai_fallback_uses_bounded_evidence_json_request(self):
+        evidence = _evidence_candidates(PAGES)
+        first = next(item for item in evidence if item["source_id"] == "S1")
+        second = next(item for item in evidence if item["source_id"] == "S2")
+        response_data = {"choices": [{"message": {"content": json.dumps({
+            "summary": brief()["summary"], "findings": [
+                {"headline": "Initial milestone", "analysis": "The first source describes a milestone.",
+                 "evidence_id": first["evidence_id"]},
+                {"headline": "Remaining challenge", "analysis": "The second source notes an unresolved challenge.",
+                 "evidence_id": second["evidence_id"]},
+            ],
+        })}}], "usage": {"total_tokens": 420}}
+        with patch("professional_research.urllib.request.urlopen",
+                   return_value=io.BytesIO(json.dumps(response_data).encode())) as api:
+            result = synthesize_openai_brief("Project update", PAGES, "private-key", "gpt-5-mini")
+        request = api.call_args.args[0]
+        body = json.loads(request.data)
+        self.assertEqual(request.full_url, "https://api.openai.com/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer private-key")
+        self.assertEqual(body["model"], "gpt-5-mini")
+        self.assertEqual(body["response_format"], {"type": "json_object"})
+        self.assertEqual(result["usage"], {
+            "provider": "OpenAI", "model": "gpt-5-mini", "tokens_reported": 420})
+        self.assertIn(QUOTE1, result["findings"][0]["evidence_quote"])
+        self.assertNotIn("private-key", request.data.decode())
 
     def test_brave_discovers_distinct_public_candidates_without_snippets(self):
         data = {"web": {"results": [
@@ -279,6 +306,26 @@ class ProfessionalResearchTests(unittest.TestCase):
             self.assertEqual([call.args[3] for call in api.call_args_list],
                              ["gemini-3.7-flash", "gemini-3.5-flash"])
 
+    def test_presentation_gemini_outage_uses_openai_quality_fallback(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
+            "GEMINI_API_KEY": "gemini-key", "OPENAI_API_KEY": "openai-key",
+            "GEMINI_PRESENTATION_MODEL": "gemini-3.7-flash",
+            "OPENAI_PRESENTATION_MODEL": "gpt-5-mini",
+        }):
+            runtime = Mark2Runtime(Path(folder))
+            target = Path(folder) / "deck.pptx"
+            with patch.object(runtime, "_run_source_probe", side_effect=PAGES), \
+                    patch("jarvis_mark2.synthesize_public_brief",
+                          side_effect=RuntimeError("Gemini report request failed (HTTP 503)")) as gemini, \
+                    patch("jarvis_mark2.synthesize_openai_brief", return_value=brief()) as openai, \
+                    patch("jarvis_mark2.create_evidence_presentation",
+                          return_value={"verification": "PPTX package verified"}) as pptx:
+                result = runtime.professional_source_presentation("Project update", URLS, str(target))
+            self.assertIn("package verified", result)
+            gemini.assert_called_once()
+            openai.assert_called_once_with("Project update", PAGES, "openai-key", "gpt-5-mini")
+            self.assertEqual(pptx.call_args.args[0]["report_usage"]["synthesis_requests"], 2)
+
     def test_report_default_falls_back_to_legacy_flash_once_on_503(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
             "GEMINI_API_KEY": "fake", "GEMINI_MODEL": "gemini-3.7-flash",
@@ -372,8 +419,8 @@ class ProfessionalResearchTests(unittest.TestCase):
             result = create_research_pdf(dossier, str(Path(folder) / "brief.pdf"))
             self.assertEqual(result["pages"], 1)
             self.assertEqual(result["brave_search_requests"], 1)
-            self.assertEqual(result["gemini_synthesis_requests"], 1)
-            self.assertEqual(result["gemini_tokens_reported"], 2300)
+            self.assertEqual(result["synthesis_requests"], 1)
+            self.assertEqual(result["synthesis_tokens_reported"], 2300)
 
     def test_potential_tension_renders_exact_linked_quotes_and_rejects_forgery(self):
         with tempfile.TemporaryDirectory() as folder:
