@@ -25,8 +25,10 @@ restricted API keys, usage limits, and revoke them afterward.
 
 The builder refuses an existing ZIP, missing models/config, symlinks in the
 model tree, oversized payloads, and unexpected source paths. The archive has
-per-file SHA-256 manifest entries. Decryption and integrity are checked before
-any installation folder is created.
+per-file SHA-256 manifest entries bound to the encrypted payload. Decryption
+and integrity are checked before any installation folder is created. The
+installer scripts themselves are not code-signed: obtain the ZIP through a
+trusted channel and do not run scripts from an untrusted or modified copy.
 
 ## On the trusted recipient laptop
 

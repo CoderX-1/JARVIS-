@@ -116,9 +116,6 @@ def build(source: Path, env_file: Path, config_dir: Path, models: Path,
         if not path.is_file():
             raise ValueError(f"Missing private config: {name}")
         configs[name] = json.loads(path.read_text(encoding="utf-8"))
-    private = json.dumps({"env": env_file.read_text(encoding="utf-8"),
-                          "configs": configs}, ensure_ascii=False).encode("utf-8")
-    envelope = encrypt_private(private, passphrase)
     files = _source_files(source) + _model_files(models)
     names = [name for _, name in files]
     if len(set(names)) != len(names) or "app/tools/private_release.py" not in names:
@@ -137,13 +134,19 @@ def build(source: Path, env_file: Path, config_dir: Path, models: Path,
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
         manifest[name] = {"sha256": digest.hexdigest(), "bytes": size}
+    manifest_bytes = json.dumps(manifest, sort_keys=True).encode("utf-8")
+    private = json.dumps({"env": env_file.read_text(encoding="utf-8"),
+                          "configs": configs,
+                          "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest()},
+                         ensure_ascii=False).encode("utf-8")
+    envelope = encrypt_private(private, passphrase)
     try:
         with zipfile.ZipFile(output, "x", compression=zipfile.ZIP_DEFLATED,
                              compresslevel=3, allowZip64=True) as archive:
             for path, name in files:
                 archive.write(path, name)
             archive.writestr("private/secrets.json", json.dumps(envelope))
-            archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+            archive.writestr("manifest.json", manifest_bytes)
             archive.write(source / "tools" / "Install-JARVIS.ps1", "Install-JARVIS.ps1")
         return {"path": str(output), "files": len(files), "bytes": output.stat().st_size}
     except Exception:
@@ -188,11 +191,14 @@ def unpack(bundle: Path, destination: Path, passphrase: str) -> dict:
             raise ValueError("Private release contains duplicate filenames")
         if archive.testzip() is not None:
             raise ValueError("Release ZIP failed its CRC check")
-        manifest = json.loads(archive.read("manifest.json"))
+        manifest_bytes = archive.read("manifest.json")
+        manifest = json.loads(manifest_bytes)
         envelope = json.loads(archive.read("private/secrets.json"))
         private = json.loads(decrypt_private(envelope, passphrase))
         if not isinstance(manifest, dict) or not isinstance(private.get("env"), str):
             raise ValueError("Invalid release metadata")
+        if private.get("manifest_sha256") != hashlib.sha256(manifest_bytes).hexdigest():
+            raise ValueError("Private release manifest authentication failed")
         if set(archive.namelist()) != set(manifest) | {"manifest.json", "private/secrets.json", "Install-JARVIS.ps1"}:
             raise ValueError("Unexpected file in private release")
         configs = _rebase_configs(private["configs"], destination)

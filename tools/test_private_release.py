@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -53,6 +54,20 @@ class PrivateReleaseTests(unittest.TestCase):
                     changed.writestr(name, b'tampered' if name == 'app/models/fixture.bin' else content)
             with self.assertRaisesRegex(ValueError, 'length mismatch|checksum mismatch'):
                 unpack(damaged, root / 'bad-install', 'example passphrase at least sixteen')
+            forged = root / 'forged.zip'
+            with zipfile.ZipFile(archive) as original, zipfile.ZipFile(forged, 'w') as changed:
+                manifest = json.loads(original.read('manifest.json'))
+                manifest['app/models/fixture.bin'] = {
+                    'sha256': hashlib.sha256(b'tampered').hexdigest(), 'bytes': len(b'tampered')}
+                for name in original.namelist():
+                    content = original.read(name)
+                    if name == 'app/models/fixture.bin':
+                        content = b'tampered'
+                    elif name == 'manifest.json':
+                        content = json.dumps(manifest, sort_keys=True).encode('utf-8')
+                    changed.writestr(name, content)
+            with self.assertRaisesRegex(ValueError, 'authentication failed'):
+                unpack(forged, root / 'forged-install', 'example passphrase at least sixteen')
             target = root / 'installed'
             with self.assertRaisesRegex(ValueError, 'Wrong passphrase'):
                 unpack(archive, target, 'wrong password')
