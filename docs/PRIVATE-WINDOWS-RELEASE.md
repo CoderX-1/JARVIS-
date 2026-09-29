@@ -51,8 +51,11 @@ trusted channel and do not run scripts from an untrusted or modified copy.
 3. Installer creates `%LOCALAPPDATA%\Programs\JARVIS` without overwriting an
    existing directory, rebuilds the voice, desktop, and Florence Python
    environments, installs browser support, and runs dependency import checks.
-   It needs network access. If a package install fails, the folder is left for
-   diagnosis; **do not treat that as a passed installation**.
+   It needs network access. If a package install fails, fix the network or
+   package issue and double-click the same `Install-JARVIS.bat` again with the
+   same ZIP. Only a matching incomplete-install marker permits dependency
+   setup to resume; completed or unrelated folders are never overwritten.
+   **Do not treat a partial install as a passed installation**.
 4. Open `START-JARVIS-DESKTOP.bat` in the installed folder. Sign in using the
    configured account. Test microphone push-to-talk, spoken response, app
    opening, browser actions, PDF, PPTX, Files shelf, and Recycle Bin on that
@@ -60,8 +63,9 @@ trusted channel and do not run scripts from an untrusted or modified copy.
 
 For source-backed PPTX, JARVIS now prefers `gpt-5-mini` if the owner has an
 OpenAI key, then tries Gemini if that request fails. PDF briefs keep Gemini as
-the lower-cost first choice and use OpenAI only when Gemini does not return a
-valid brief. The exact selected evidence quotes are still checked against the
+the lower-cost first choice and use OpenAI after transient Gemini availability
+failures; quota/authentication errors do not trigger extra provider calls.
+The exact selected evidence quotes are still checked against the
 fetched page excerpts. Successful ZIP/XML verification does not prove the slide
 looks good in PowerPoint: open the deck and review it before presenting.
 

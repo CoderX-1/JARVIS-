@@ -48,27 +48,43 @@ Write-Host 'JARVIS private installer: Python 3.12 found.'
 Write-Host 'It will decrypt your configuration locally, then download Python dependencies.'
 Write-Host 'Internet and several GB of free disk space are required.'
 $destinationPath = [IO.Path]::GetFullPath($Destination)
+$installMarker = Join-Path $destinationPath '.jarvis-install-incomplete'
+$resumeInstall = $false
 if (Test-Path -LiteralPath $destinationPath) {
-    throw "Installation folder already exists; no files were overwritten: $destinationPath"
+    if (-not (Test-Path -LiteralPath $installMarker -PathType Leaf)) {
+        throw "Installation folder already exists; no files were overwritten: $destinationPath"
+    }
+    $expectedBundleHash = (Get-Content -LiteralPath $installMarker -Raw).Trim()
+    $currentBundleHash = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash
+    if ($expectedBundleHash -ne $currentBundleHash) {
+        throw 'Incomplete install belongs to a different release ZIP; no files were overwritten.'
+    }
+    $resumeInstall = $true
+    Write-Host 'Resuming dependency setup for the verified incomplete JARVIS installation.'
 }
 $destinationParent = Split-Path -Parent $destinationPath
 if (-not (Test-Path -LiteralPath $destinationParent)) {
     New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
 }
 
-$tempVenv = Join-Path $env:TEMP ('jarvis-setup-' + [guid]::NewGuid().ToString('N'))
-& $python[0] @pythonArgs -m venv $tempVenv
-if ($LASTEXITCODE -ne 0) { throw 'Setup Python environment failed.' }
-$setupPython = Join-Path $tempVenv 'Scripts\python.exe'
-& $setupPython -m pip install --disable-pip-version-check 'cryptography>=45,<48'
-if ($LASTEXITCODE -ne 0) { throw 'Encryption support could not be installed; no JARVIS files were installed.' }
+if (-not $resumeInstall) {
+    $tempVenv = Join-Path $env:TEMP ('jarvis-setup-' + [guid]::NewGuid().ToString('N'))
+    & $python[0] @pythonArgs -m venv $tempVenv
+    if ($LASTEXITCODE -ne 0) { throw 'Setup Python environment failed.' }
+    $setupPython = Join-Path $tempVenv 'Scripts\python.exe'
+    & $setupPython -m pip install --disable-pip-version-check 'cryptography>=45,<48'
+    if ($LASTEXITCODE -ne 0) { throw 'Encryption support could not be installed; no JARVIS files were installed.' }
 
-$installCode = Join-Path $PSScriptRoot 'app\tools\private_release.py'
-if (-not (Test-Path -LiteralPath $installCode)) {
-    throw 'Extract the entire private release ZIP, then run this script from the extracted folder.'
+    $installCode = Join-Path $PSScriptRoot 'app\tools\private_release.py'
+    if (-not (Test-Path -LiteralPath $installCode)) {
+        throw 'Extract the entire private release ZIP, then run this script from the extracted folder.'
+    }
+    & $setupPython $installCode unpack --bundle $bundle --destination $destinationPath
+    if ($LASTEXITCODE -ne 0) { throw 'Private release verification or passphrase failed.' }
+    if (-not (Test-Path -LiteralPath $installMarker -PathType Leaf)) {
+        throw 'Incomplete-install marker is missing; dependency setup cannot safely continue.'
+    }
 }
-& $setupPython $installCode unpack --bundle $bundle --destination $destinationPath
-if ($LASTEXITCODE -ne 0) { throw 'Private release verification or passphrase failed.' }
 
 $voiceRoot = Join-Path $destinationPath 'components\backtalk'
 $voiceVenv = Join-Path $voiceRoot '.venv'
@@ -136,6 +152,7 @@ if (-not $ffmpegCommand) {
 if (-not $ffmpegCommand) { throw 'FFmpeg executable not found after installation; Fish Audio voice cannot be verified.' }
 & $florencePython -c 'import torch, transformers, timm, einops'
 if ($LASTEXITCODE -ne 0) { throw 'Florence import smoke test failed.' }
+Remove-Item -LiteralPath $installMarker -Force
 Write-Host "JARVIS installed: $destinationPath"
 Write-Host 'Before class: run START-JARVIS-DESKTOP.bat, sign in, and test mic, TTS, PDF, PPTX, browser, and app opening on this laptop.'
 Write-Host 'Do not upload or share this private ZIP publicly; installed API keys remain accessible to the laptop owner/admin.'

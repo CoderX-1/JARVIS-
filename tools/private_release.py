@@ -251,6 +251,9 @@ def unpack(bundle: Path, destination: Path, passphrase: str) -> dict:
             config_folder.mkdir(exist_ok=True)
             for name, content in configs.items():
                 (config_folder / name).write_text(content, encoding="utf-8")
+            with bundle.open("rb") as bundle_stream:
+                bundle_hash = hashlib.file_digest(bundle_stream, "sha256").hexdigest().upper()
+            (stage / ".jarvis-install-incomplete").write_text(bundle_hash, encoding="ascii")
             stage.rename(destination)
         except Exception:
             # Leave the exact newly-created stage for inspection/recovery; no

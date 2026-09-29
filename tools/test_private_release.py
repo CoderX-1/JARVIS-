@@ -78,6 +78,8 @@ class PrivateReleaseTests(unittest.TestCase):
             self.assertEqual((target / '.env').read_text(encoding='utf-8'),
                              'OPENAI_API_KEY=fixture-not-a-real-key\n')
             self.assertEqual((target / 'models' / 'fixture.bin').read_bytes(), b'local model')
+            self.assertEqual((target / '.jarvis-install-incomplete').read_text(encoding='ascii'),
+                             hashlib.sha256(archive.read_bytes()).hexdigest().upper())
             config = json.loads((target / 'config' / 'backtalk.json').read_text(encoding='utf-8'))
             self.assertEqual(config['agent_dir'], target.as_posix())
             self.assertNotIn('mic_device', config)
