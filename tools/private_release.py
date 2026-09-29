@@ -14,6 +14,7 @@ import getpass
 import hashlib
 import json
 import os
+import secrets
 import subprocess
 import sys
 import uuid
@@ -148,6 +149,7 @@ def build(source: Path, env_file: Path, config_dir: Path, models: Path,
             archive.writestr("private/secrets.json", json.dumps(envelope))
             archive.writestr("manifest.json", manifest_bytes)
             archive.write(source / "tools" / "Install-JARVIS.ps1", "Install-JARVIS.ps1")
+            archive.write(source / "tools" / "Install-JARVIS.bat", "Install-JARVIS.bat")
         return {"path": str(output), "files": len(files), "bytes": output.stat().st_size}
     except Exception:
         output.unlink(missing_ok=True)
@@ -199,7 +201,7 @@ def unpack(bundle: Path, destination: Path, passphrase: str) -> dict:
             raise ValueError("Invalid release metadata")
         if private.get("manifest_sha256") != hashlib.sha256(manifest_bytes).hexdigest():
             raise ValueError("Private release manifest authentication failed")
-        if set(archive.namelist()) != set(manifest) | {"manifest.json", "private/secrets.json", "Install-JARVIS.ps1"}:
+        if set(archive.namelist()) != set(manifest) | {"manifest.json", "private/secrets.json", "Install-JARVIS.ps1", "Install-JARVIS.bat"}:
             raise ValueError("Unexpected file in private release")
         configs = _rebase_configs(private["configs"], destination)
         total = 0
@@ -243,17 +245,33 @@ def main() -> int:
     make = sub.add_parser("build")
     for flag in ("source", "env", "config", "models", "output"):
         make.add_argument("--" + flag, type=Path, required=True)
+    make.add_argument("--generate-passphrase-file", type=Path)
     install = sub.add_parser("unpack")
     install.add_argument("--bundle", type=Path, required=True)
     install.add_argument("--destination", type=Path, required=True)
     args = parser.parse_args()
-    password = getpass.getpass("Private release passphrase (not shown): ")
     if args.command == "build":
-        confirm = getpass.getpass("Repeat passphrase: ")
-        if password != confirm:
-            raise ValueError("Passphrases do not match")
-        result = build(args.source, args.env, args.config, args.models, args.output, password)
+        if args.generate_passphrase_file:
+            password_path = args.generate_passphrase_file.resolve(strict=False)
+            if password_path.exists() or not password_path.parent.is_dir():
+                raise ValueError("Choose a new passphrase file in an existing folder")
+            password = secrets.token_urlsafe(24)
+            result = build(args.source, args.env, args.config, args.models, args.output, password)
+            try:
+                with password_path.open("x", encoding="utf-8") as stream:
+                    stream.write(password + "\n")
+            except Exception:
+                args.output.unlink(missing_ok=True)
+                raise ValueError("Passphrase file could not be saved; release ZIP was removed")
+            result["passphrase_file"] = str(password_path)
+        else:
+            password = getpass.getpass("Private release passphrase (not shown): ")
+            confirm = getpass.getpass("Repeat passphrase: ")
+            if password != confirm:
+                raise ValueError("Passphrases do not match")
+            result = build(args.source, args.env, args.config, args.models, args.output, password)
     else:
+        password = getpass.getpass("Private release passphrase (not shown): ")
         result = unpack(args.bundle, args.destination, password)
     print(json.dumps(result))
     return 0

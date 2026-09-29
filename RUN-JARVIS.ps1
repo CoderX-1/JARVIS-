@@ -197,6 +197,20 @@ $env:BACKTALK_LOG = Join-Path $logs "backtalk.log"
 $env:HF_HOME = Join-Path $models "huggingface"
 $env:JARVIS_FLORENCE_ENABLED = "0"
 
+# A freshly installed winget portable FFmpeg may not yet be visible in the
+# Explorer process PATH. Fish Audio playback needs the executable, so resolve
+# it from the per-user winget package location before starting Backtalk.
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+    $wingetPackages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path -LiteralPath $wingetPackages) {
+        $ffmpeg = Get-ChildItem -LiteralPath $wingetPackages -Filter 'ffmpeg.exe' `
+            -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($ffmpeg) {
+            $env:PATH = $ffmpeg.DirectoryName + [IO.Path]::PathSeparator + $env:PATH
+        }
+    }
+}
+
 # Use the app-owned runtime. A clean installation must not depend on a
 # machine-wide Python command still being on PATH after setup.
 $python = $backtalkPython

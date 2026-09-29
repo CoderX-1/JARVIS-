@@ -1,6 +1,6 @@
 param(
     [string]$LiveRoot = 'C:\Projects\JARVIS',
-    [string]$Output = (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads\JARVIS-private-release.zip')
+    [string]$Output = (Join-Path $PSScriptRoot '.jarvis-private\JARVIS-private-release.zip')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,11 +9,15 @@ $python = Get-Command python -ErrorAction Stop
 if ($LASTEXITCODE -ne 0) {
     throw 'Builder requires Python 3.12 with cryptography installed on this PC.'
 }
+$privateFolder = Join-Path $PSScriptRoot '.jarvis-private'
+New-Item -ItemType Directory -Force -Path $privateFolder | Out-Null
+$passwordFile = Join-Path $privateFolder 'teacher-install-private-release.password.txt'
 & $python.Source (Join-Path $PSScriptRoot 'tools\private_release.py') build `
     --source $PSScriptRoot `
     --env (Join-Path $LiveRoot '.env') `
     --config (Join-Path $LiveRoot 'config') `
     --models (Join-Path $LiveRoot 'models') `
-    --output $Output
+    --output $Output `
+    --generate-passphrase-file $passwordFile
 if ($LASTEXITCODE -ne 0) { throw 'Private release was not created.' }
-Write-Host 'Release ZIP is private. Do not upload it to GitHub or a public file-sharing link.'
+Write-Host 'Send only the ZIP to the trusted laptop. Keep the password file separately.'

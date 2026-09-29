@@ -30,6 +30,7 @@ class PrivateReleaseTests(unittest.TestCase):
             (source / 'RUN-JARVIS.ps1').write_text('Write-Host "fixture"', encoding='utf-8')
             (source / 'tools' / 'private_release.py').write_text('# fixture', encoding='utf-8')
             (source / 'tools' / 'Install-JARVIS.ps1').write_text('# fixture', encoding='utf-8')
+            (source / 'tools' / 'Install-JARVIS.bat').write_text('@echo off', encoding='utf-8')
             (source / 'core' / 'agent.py').write_text('# fixture', encoding='utf-8')
             (live / '.env').write_text('OPENAI_API_KEY=fixture-not-a-real-key\n', encoding='utf-8')
             configs = {
@@ -92,6 +93,7 @@ class PrivateReleaseTests(unittest.TestCase):
                 archive.writestr('private/secrets.json', json.dumps(
                     encrypt_private(b'{"env":"","configs":{}}', 'long example passphrase')))
                 archive.writestr('Install-JARVIS.ps1', '')
+                archive.writestr('Install-JARVIS.bat', '')
                 archive.writestr('app/../escape.txt', 'bad')
             with self.assertRaises(ValueError):
                 unpack(path, Path(folder) / 'installed', 'long example passphrase')

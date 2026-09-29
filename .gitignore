@@ -15,4 +15,6 @@ config/*.json
 .venv/
 .florence-venv/
 *private-release*.zip
+*private-release*.password.txt
+.jarvis-private/
 *.secrets.json
