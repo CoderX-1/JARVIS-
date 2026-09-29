@@ -3,7 +3,9 @@
 Only source/model files are plaintext in the ZIP. The environment and local
 configuration are AES-256-GCM encrypted with a passphrase-derived key. The ZIP
 must never be committed or published: installed applications expose API keys to
-the local machine's owner, regardless of transport encryption.
+the local machine's owner, regardless of transport encryption. The explicit
+passwordless-install option embeds the unlock passphrase in the ZIP; anyone who
+gets that ZIP can recover the environment and API keys.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ MAX_FILE = 3_000_000_000
 MAX_TOTAL = 7_000_000_000
 PRODUCTION_ROOTS = {"core", "desktop", "components", "docs", "tools", "config"}
 TOP_FILES = {"RUN-JARVIS.ps1", "START-JARVIS-DESKTOP.bat", "README.md"}
+PASSPHRASE_MEMBER = "private/install-passphrase.txt"
 
 
 def _b64(value: bytes) -> str:
@@ -102,7 +105,7 @@ def _model_files(models: Path) -> list[tuple[Path, str]]:
 
 
 def build(source: Path, env_file: Path, config_dir: Path, models: Path,
-          output: Path, passphrase: str) -> dict:
+          output: Path, passphrase: str, *, embed_passphrase: bool = False) -> dict:
     source, env_file, config_dir, models, output = (
         item.resolve(strict=False) for item in (source, env_file, config_dir, models, output))
     if output.exists() or not output.parent.is_dir() or output.suffix.lower() != ".zip":
@@ -147,10 +150,13 @@ def build(source: Path, env_file: Path, config_dir: Path, models: Path,
             for path, name in files:
                 archive.write(path, name)
             archive.writestr("private/secrets.json", json.dumps(envelope))
+            if embed_passphrase:
+                archive.writestr(PASSPHRASE_MEMBER, passphrase)
             archive.writestr("manifest.json", manifest_bytes)
             archive.write(source / "tools" / "Install-JARVIS.ps1", "Install-JARVIS.ps1")
             archive.write(source / "tools" / "Install-JARVIS.bat", "Install-JARVIS.bat")
-        return {"path": str(output), "files": len(files), "bytes": output.stat().st_size}
+        return {"path": str(output), "files": len(files), "bytes": output.stat().st_size,
+            "passwordless_install": embed_passphrase}
     except Exception:
         output.unlink(missing_ok=True)
         raise
@@ -193,6 +199,16 @@ def unpack(bundle: Path, destination: Path, passphrase: str) -> dict:
             raise ValueError("Private release contains duplicate filenames")
         if archive.testzip() is not None:
             raise ValueError("Release ZIP failed its CRC check")
+        if PASSPHRASE_MEMBER in archive.namelist():
+            try:
+                embedded_passphrase = archive.read(PASSPHRASE_MEMBER).decode("ascii")
+            except UnicodeDecodeError as exc:
+                raise ValueError("Invalid embedded install passphrase") from exc
+            if passphrase and passphrase != embedded_passphrase:
+                raise ValueError("Provided passphrase does not match this release")
+            passphrase = embedded_passphrase
+        if not passphrase:
+            raise ValueError("This release needs a passphrase or an embedded install passphrase")
         manifest_bytes = archive.read("manifest.json")
         manifest = json.loads(manifest_bytes)
         envelope = json.loads(archive.read("private/secrets.json"))
@@ -201,7 +217,11 @@ def unpack(bundle: Path, destination: Path, passphrase: str) -> dict:
             raise ValueError("Invalid release metadata")
         if private.get("manifest_sha256") != hashlib.sha256(manifest_bytes).hexdigest():
             raise ValueError("Private release manifest authentication failed")
-        if set(archive.namelist()) != set(manifest) | {"manifest.json", "private/secrets.json", "Install-JARVIS.ps1", "Install-JARVIS.bat"}:
+        expected_names = set(manifest) | {
+            "manifest.json", "private/secrets.json", "Install-JARVIS.ps1", "Install-JARVIS.bat"}
+        if PASSPHRASE_MEMBER in archive.namelist():
+            expected_names.add(PASSPHRASE_MEMBER)
+        if set(archive.namelist()) != expected_names:
             raise ValueError("Unexpected file in private release")
         configs = _rebase_configs(private["configs"], destination)
         total = 0
@@ -246,12 +266,20 @@ def main() -> int:
     for flag in ("source", "env", "config", "models", "output"):
         make.add_argument("--" + flag, type=Path, required=True)
     make.add_argument("--generate-passphrase-file", type=Path)
+    make.add_argument("--passwordless-install", action="store_true",
+                      help="Embed the unlock passphrase in the ZIP; anyone with it can recover API keys")
     install = sub.add_parser("unpack")
     install.add_argument("--bundle", type=Path, required=True)
     install.add_argument("--destination", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "build":
-        if args.generate_passphrase_file:
+        if args.passwordless_install and args.generate_passphrase_file:
+            raise ValueError("Choose either passwordless install or a separate passphrase file")
+        if args.passwordless_install:
+            password = secrets.token_urlsafe(24)
+            result = build(args.source, args.env, args.config, args.models,
+                           args.output, password, embed_passphrase=True)
+        elif args.generate_passphrase_file:
             password_path = args.generate_passphrase_file.resolve(strict=False)
             if password_path.exists() or not password_path.parent.is_dir():
                 raise ValueError("Choose a new passphrase file in an existing folder")
@@ -271,7 +299,9 @@ def main() -> int:
                 raise ValueError("Passphrases do not match")
             result = build(args.source, args.env, args.config, args.models, args.output, password)
     else:
-        password = getpass.getpass("Private release passphrase (not shown): ")
+        with zipfile.ZipFile(args.bundle) as archive:
+            passwordless = PASSPHRASE_MEMBER in archive.namelist()
+        password = "" if passwordless else getpass.getpass("Private release passphrase (not shown): ")
         result = unpack(args.bundle, args.destination, password)
     print(json.dumps(result))
     return 0

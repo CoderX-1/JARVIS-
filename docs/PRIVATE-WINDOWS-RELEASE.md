@@ -6,6 +6,12 @@ three local configuration files are protected with AES-256-GCM and a
 600,000-iteration PBKDF2-SHA256 key derivation. The passphrase is entered in
 the local terminal, never placed in the command line, repository, or chat.
 
+For a passwordless class-demo package, run `./BUILD-PRIVATE-RELEASE.ps1
+-PasswordlessInstall`. This embeds the unlock passphrase in the ZIP so install
+does not prompt. It is not meaningful protection for the API keys: anyone who
+receives the ZIP can recover them. Never publish that ZIP or push it to GitHub.
+The default build remains encrypted with a separately delivered passphrase.
+
 Encryption protects the ZIP in transit. Once installed, API keys must be
 available to JARVIS and therefore the laptop owner/administrator can retrieve
 them. If that laptop is not trusted, do not install this release. Use separate

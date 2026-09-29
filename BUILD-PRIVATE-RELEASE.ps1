@@ -1,6 +1,7 @@
 param(
     [string]$LiveRoot = 'C:\Projects\JARVIS',
-    [string]$Output = (Join-Path $PSScriptRoot '.jarvis-private\JARVIS-private-release.zip')
+    [string]$Output = (Join-Path $PSScriptRoot '.jarvis-private\JARVIS-private-release.zip'),
+    [switch]$PasswordlessInstall
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,13 +12,24 @@ if ($LASTEXITCODE -ne 0) {
 }
 $privateFolder = Join-Path $PSScriptRoot '.jarvis-private'
 New-Item -ItemType Directory -Force -Path $privateFolder | Out-Null
-$passwordFile = Join-Path $privateFolder 'teacher-install-private-release.password.txt'
-& $python.Source (Join-Path $PSScriptRoot 'tools\private_release.py') build `
-    --source $PSScriptRoot `
-    --env (Join-Path $LiveRoot '.env') `
-    --config (Join-Path $LiveRoot 'config') `
-    --models (Join-Path $LiveRoot 'models') `
-    --output $Output `
-    --generate-passphrase-file $passwordFile
+$buildArgs = @(
+    'build',
+    '--source', $PSScriptRoot,
+    '--env', (Join-Path $LiveRoot '.env'),
+    '--config', (Join-Path $LiveRoot 'config'),
+    '--models', (Join-Path $LiveRoot 'models'),
+    '--output', $Output
+)
+if ($PasswordlessInstall) {
+    $buildArgs += '--passwordless-install'
+} else {
+    $buildArgs += @('--generate-passphrase-file',
+        (Join-Path $privateFolder 'teacher-install-private-release.password.txt'))
+}
+& $python.Source (Join-Path $PSScriptRoot 'tools\private_release.py') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw 'Private release was not created.' }
-Write-Host 'Send only the ZIP to the trusted laptop. Keep the password file separately.'
+if ($PasswordlessInstall) {
+    Write-Warning 'The ZIP contains its own unlock passphrase. Anyone who obtains it can recover the API keys.'
+} else {
+    Write-Host 'Send only the ZIP to the trusted laptop. Keep the password file separately.'
+}

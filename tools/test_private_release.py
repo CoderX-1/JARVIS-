@@ -85,6 +85,39 @@ class PrivateReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'already'):
                 unpack(archive, target, 'example passphrase at least sixteen')
 
+    def test_passwordless_release_automatically_unlocks_from_zip(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source, live, models = (root / name for name in ('source', 'live', 'models'))
+            for directory in (source / 'tools', source / 'core', live / 'config', models):
+                directory.mkdir(parents=True, exist_ok=True)
+            (source / 'RUN-JARVIS.ps1').write_text('Write-Host "fixture"', encoding='utf-8')
+            (source / 'tools' / 'private_release.py').write_text('# fixture', encoding='utf-8')
+            (source / 'tools' / 'Install-JARVIS.ps1').write_text('# fixture', encoding='utf-8')
+            (source / 'tools' / 'Install-JARVIS.bat').write_text('@echo off', encoding='utf-8')
+            (source / 'core' / 'agent.py').write_text('# fixture', encoding='utf-8')
+            (live / '.env').write_text('OPENAI_API_KEY=fixture-only-secret\n', encoding='utf-8')
+            configs = {
+                'backtalk.json': {'agent_dir': 'C:/Projects/JARVIS'},
+                'barehands.json': {'orbs': []},
+                'ai-visualizer.json': {'bus_dir': 'C:/Projects/JARVIS/runtime/signals'},
+            }
+            for name, data in configs.items():
+                (live / 'config' / name).write_text(json.dumps(data), encoding='utf-8')
+            (models / 'fixture.bin').write_bytes(b'local model')
+            subprocess.run(['git', 'init', '-q'], cwd=source, check=True)
+            archive = root / 'JARVIS-passwordless.zip'
+            build(source, live / '.env', live / 'config', models, archive,
+                  'embedded example passphrase 2026', embed_passphrase=True)
+            with zipfile.ZipFile(archive) as release:
+                self.assertIn('private/install-passphrase.txt', release.namelist())
+                self.assertNotIn(b'fixture-only-secret', release.read('private/secrets.json'))
+            target = root / 'installed'
+            result = unpack(archive, target, '')
+            self.assertFalse(result['dependencies_ready'])
+            self.assertEqual((target / '.env').read_text(encoding='utf-8'),
+                             'OPENAI_API_KEY=fixture-only-secret\n')
+
     def test_rejects_extra_unmanifested_zip_entry(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'bad.zip'
