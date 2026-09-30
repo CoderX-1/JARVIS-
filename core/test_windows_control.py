@@ -12,6 +12,11 @@ from windows_vision import VisionObservation, VisionWord, WindowsVision
 
 
 class WindowsControlContractTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_state = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_state.cleanup)
+        self.state_path = Path(self.temp_state.name)
+
     def test_closed_visual_target_satisfies_action_verification_contract(self):
         result = (
             "Verified visual action: target window closed after click on 'Don\'t Save'; "
@@ -181,7 +186,8 @@ class WindowsControlContractTests(unittest.TestCase):
             "handle": 10, "pid": 20, "title": "Demo", "process": "demo.exe",
             "foreground": True,
         }]])
-        with patch("os.startfile", create=True) as startfile:
+        with patch("pathlib.Path.is_file", return_value=True), \
+                patch("os.startfile", create=True) as startfile:
             result = control.launch_app("Demo", wait_seconds=1)
         startfile.assert_called_once_with("C:\\Start\\Demo.lnk")
         self.assertIn("Opened and verified Demo", result)
@@ -212,10 +218,11 @@ class WindowsControlContractTests(unittest.TestCase):
             runtime = Mark2Runtime(Path(tmp))
             runtime.windows_control = Mock()
             runtime.windows_control.launch_app.return_value = "opened and verified"
-            self.assertEqual(
-                runtime.execute("launch_app", {"name": "Notepad", "wait_seconds": 3}),
-                "opened and verified",
-            )
+            with patch.object(runtime.interaction_guard, "preflight", return_value=(True, "allowed")):
+                self.assertEqual(
+                    runtime.execute("launch_app", {"name": "Notepad", "wait_seconds": 3}),
+                    "opened and verified",
+                )
             runtime.windows_control.launch_app.assert_called_once_with("Notepad", 3)
             runtime.audit("type_text", {"text": "private words", "value": "secret value"}, "ok")
             audit = runtime.audit_path.read_text(encoding="utf-8")
@@ -294,7 +301,7 @@ class WindowsControlContractTests(unittest.TestCase):
                 ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"]
             )
         ]
-        vision = WindowsVision(control, Path("."))
+        vision = WindowsVision(control, self.state_path)
         matches, source = vision._locate_with_fallback(observation, "7")
         self.assertEqual(source, "uia-fallback")
         self.assertEqual(len(matches), 1)
@@ -326,7 +333,7 @@ class WindowsControlContractTests(unittest.TestCase):
         control.user32.WindowFromPoint.return_value = 11
         control.user32.GetAncestor.return_value = 10
         control.mouse_action.return_value = "mouse verified"
-        vision = WindowsVision(control, Path("."))
+        vision = WindowsVision(control, self.state_path)
         vision.observe = Mock(side_effect=[before, before, after])
         vision._change_ratio = Mock(return_value=0.02)
         with patch("time.sleep"):
@@ -379,7 +386,7 @@ class WindowsControlContractTests(unittest.TestCase):
                 return "clicked"
 
         control = Control()
-        vision = WindowsVision(control, Path("."))
+        vision = WindowsVision(control, self.state_path)
         vision.observe = Mock(return_value=observation)
         result = vision.click_visual_text("Demo", "Go")
         self.assertIn("foreground window changed", result)
@@ -401,7 +408,7 @@ class WindowsControlContractTests(unittest.TestCase):
                 return "clicked"
 
         control = Control()
-        vision = WindowsVision(control, Path("."))
+        vision = WindowsVision(control, self.state_path)
         vision.observe = Mock(return_value=observation)
         result = vision.click_visual_text("Demo", "Go")
         self.assertIn("outside the observed window", result)
@@ -441,7 +448,7 @@ class WindowsControlContractTests(unittest.TestCase):
                 return "clicked"
 
         control = Control()
-        vision = WindowsVision(control, Path("."))
+        vision = WindowsVision(control, self.state_path)
         vision.observe = Mock(return_value=observation)
         result = vision.click_visual_text("Demo", "Go")
         self.assertIn("another window covers", result)
