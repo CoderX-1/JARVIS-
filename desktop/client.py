@@ -63,6 +63,17 @@ class JarvisClient:
         reply = self._get(self.bridge_url + "/events", headers=self._headers())
         return reply.get("events", [])
 
+    def devices(self) -> dict:
+        return self._get(self.bridge_url + "/devices", headers=self._headers())
+
+    def select_microphone(self, device: str) -> dict:
+        body = json.dumps({"device": device}).encode("utf-8")
+        request = urllib.request.Request(
+            self.bridge_url + "/mic", data=body,
+            headers={**self._headers(), "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(request, timeout=3) as response:
+            return json.load(response)
+
     def send(self, text: str) -> None:
         message = text.strip()
         if not message or len(message) > 4000:

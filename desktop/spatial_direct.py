@@ -59,7 +59,9 @@ class DirectSpatial:
                        '"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"',
                        '"/vendor/model/hand_landmarker.task"')
         script = _once(script, 'const Q = new URLSearchParams(location.search);',
-                       'const Q = new URLSearchParams(spatialMode === "tracking" ? "" : "?role=preview");')
+                       'const Q = new URLSearchParams(window.location.search);\n'
+                       'if (spatialMode !== "tracking") Q.set("role", "preview");\n'
+                       'if (Q.has("spatialCam")) Q.set("cam", Q.get("spatialCam"));')
         script = re.sub(r"\binnerWidth\b", "spatialHost.clientWidth", script)
         script = re.sub(r"\binnerHeight\b", "spatialHost.clientHeight", script)
         script = _once(script, "if (!RING.live) return;",

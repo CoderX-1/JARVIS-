@@ -20,6 +20,16 @@ class RecycleIntentTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertFalse(agent.explicit_recycle_request(prompt))
 
+    def test_presentation_action_is_distinct_from_a_how_to_question(self):
+        self.assertTrue(agent.explicit_presentation_creation(
+            "Types of AI pe presentation banani hai"))
+        self.assertTrue(agent.explicit_presentation_creation(
+            "Create a professional PowerPoint about AI"))
+        self.assertFalse(agent.explicit_presentation_creation(
+            "How to create a presentation?"))
+        self.assertFalse(agent.explicit_presentation_creation(
+            "Don't make a presentation"))
+
 
 class ProviderConfigTests(unittest.TestCase):
     def test_gemini_is_inferred_from_its_key(self):
@@ -66,6 +76,35 @@ class FakeAgent(agent.LocalAgent):
 
 
 class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_presentation_nudge_uses_output_shelf_and_reports_real_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = agent.ProviderConfig("openai", "test", agent.OPENAI_BASE_URL, "test-model")
+            replies = [
+                {"content": "I need permission to create a folder."},
+                {"content": None, "tool_calls": [{"id": "deck-1", "type": "function",
+                    "function": {"name": "professional_topic_presentation", "arguments":
+                                 '{"topic":"Types of AI","output_path":"JARVIS/output/ai.pptx"}'}}]},
+                {"content": "I need permission to create a folder."},
+            ]
+            runner = FakeAgent(config, Path(tmp), "instructions", auto_approve=True, replies=replies)
+            with patch.object(runner.mark2, "execute",
+                              return_value="error: fewer than two independent public pages were readable") as execute:
+                answer = await runner.ask("Types of AI pe presentation banani hai")
+            execute.assert_called_once_with("professional_topic_presentation", {"topic": "Types of AI"})
+            self.assertIn("fewer than two independent public pages", answer)
+            self.assertNotIn("permission", answer.casefold())
+
+    async def test_presentation_keeps_a_user_named_output_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = agent.ProviderConfig("openai", "test", agent.OPENAI_BASE_URL, "test-model")
+            runner = agent.LocalAgent(config, Path(tmp), "instructions", auto_approve=True)
+            path = str(Path(tmp) / "deck.pptx")
+            runner._current_request = f"Create a presentation at {path}"
+            args = {"topic": "Types of AI", "output_path": path}
+            with patch.object(runner.mark2, "execute", return_value="error: fixture") as execute:
+                await runner._run_tool("professional_topic_presentation", args)
+            execute.assert_called_once_with("professional_topic_presentation", args)
+
     async def test_voice_recycle_tool_requires_explicit_current_turn_request(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = agent.ProviderConfig("openai", "test", agent.OPENAI_BASE_URL, "test-model")

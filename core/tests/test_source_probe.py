@@ -123,9 +123,10 @@ class PublicSourceProbeTests(unittest.TestCase):
             result = inspect_public_page("https://example.org/report")
         self.assertEqual(result["status"], "unsafe")
 
-    def test_page_read_rejects_oversized_content_before_body(self):
+    def test_page_read_uses_bounded_prefix_of_large_public_page(self):
         class Response:
             status = 200
+            last_read_limit = None
 
             def __init__(self, *_args, **_kwargs):
                 self.read_called = False
@@ -138,15 +139,19 @@ class PublicSourceProbeTests(unittest.TestCase):
 
             def read(self, _limit):
                 self.read_called = True
-                return b""
+                Response.last_read_limit = _limit
+                return b"<main>Public source text.</main>"
 
             def close(self):
                 pass
 
         connection = unittest.mock.Mock()
         with patch("source_probe.http.client.HTTPResponse", Response):
-            with self.assertRaisesRegex(UnsafeSource, "bounded read size"):
-                _exchange(connection, "example.org", "/report", "GET")
+            status, _location, _modified, _type, body = _exchange(
+                connection, "example.org", "/report", "GET")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"<main>Public source text.</main>")
+        self.assertEqual(Response.last_read_limit, MAX_PAGE_BYTES)
 
 
 if __name__ == "__main__":

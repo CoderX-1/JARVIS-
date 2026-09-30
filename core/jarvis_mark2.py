@@ -486,9 +486,9 @@ MARK2_TOOLS.extend([
             "name": "professional_source_report",
             "description": (
                 "Create a concise professional PDF brief from 1 to 3 supplied public URLs. "
-                "Directly reads safe pages, then uses one Gemini synthesis request with exact "
-                "source-quote checks. Requires GEMINI_API_KEY. No Google Search grounding, "
-                "link harvesting, or paid OpenAI web search. Never overwrites a file."
+                "Directly reads safe pages and checks selected quotes. Gemini is preferred; "
+                "OpenAI may back up a transient Gemini failure. Omit output_path unless the user "
+                "named a destination; JARVIS creates its output folder. Never overwrites a file."
             ),
             "parameters": {
                 "type": "object", "additionalProperties": False,
@@ -496,7 +496,8 @@ MARK2_TOOLS.extend([
                     "topic": {"type": "string", "minLength": 2, "maxLength": 200},
                     "urls": {"type": "array", "minItems": 1, "maxItems": 3,
                              "items": {"type": "string", "minLength": 8, "maxLength": 2000}},
-                    "output_path": {"type": "string", "minLength": 5},
+                    "output_path": {"type": "string", "minLength": 5,
+                                    "description": "Optional. Omit unless the user named a destination."},
                 },
                 "required": ["topic", "urls"],
             },
@@ -509,14 +510,15 @@ MARK2_TOOLS.extend([
             "description": (
                 "Create a concise professional PDF brief from a topic. One Brave Search API "
                 "query finds candidate URLs, JARVIS directly reads 2 to 3 safe public pages, "
-                "and one Gemini call synthesizes source-quote-checked findings. Requires "
-                "BRAVE_SEARCH_API_KEY and GEMINI_API_KEY. No Google grounding link harvesting."
+                "and Gemini or OpenAI synthesizes source-checked findings. Omit output_path "
+                "unless the user named a destination; JARVIS creates its output folder."
             ),
             "parameters": {
                 "type": "object", "additionalProperties": False,
                 "properties": {
                     "topic": {"type": "string", "minLength": 2, "maxLength": 200},
-                    "output_path": {"type": "string", "minLength": 5},
+                    "output_path": {"type": "string", "minLength": 5,
+                                    "description": "Optional. Omit unless the user named a destination."},
                 },
                 "required": ["topic"],
             },
@@ -528,9 +530,10 @@ MARK2_TOOLS.extend([
             "name": "professional_source_presentation",
             "description": (
                 "Create an editable, source-attributed PPTX evidence deck from 1 to 3 "
-                "supplied public URLs. Directly reads safe pages and uses one Gemini synthesis "
-                "request. Text and package integrity are checked; visual opening needs PowerPoint "
-                "or a compatible viewer. Requires GEMINI_API_KEY. Never overwrites a file."
+                "supplied public URLs. Directly reads safe pages; OpenAI is preferred for "
+                "slides when configured, with Gemini backup. Omit output_path unless the user "
+                "named a destination; JARVIS creates its output folder. Package checks do not "
+                "replace visual review. Never overwrites a file."
             ),
             "parameters": {
                 "type": "object", "additionalProperties": False,
@@ -538,7 +541,8 @@ MARK2_TOOLS.extend([
                     "topic": {"type": "string", "minLength": 2, "maxLength": 200},
                     "urls": {"type": "array", "minItems": 1, "maxItems": 3,
                              "items": {"type": "string", "minLength": 8, "maxLength": 2000}},
-                    "output_path": {"type": "string", "minLength": 5},
+                    "output_path": {"type": "string", "minLength": 5,
+                                    "description": "Optional. Omit unless the user named a destination."},
                 },
                 "required": ["topic", "urls"],
             },
@@ -551,14 +555,16 @@ MARK2_TOOLS.extend([
             "description": (
                 "Create an editable, source-attributed PPTX evidence deck from a topic. "
                 "One Brave query discovers candidates, JARVIS directly reads independent public "
-                "pages, then Gemini synthesizes findings. Requires BRAVE_SEARCH_API_KEY and "
-                "GEMINI_API_KEY. Package checks do not replace visual opening in PowerPoint."
+                "pages, then OpenAI or Gemini synthesizes checked findings. Omit output_path "
+                "unless the user named a destination; JARVIS creates its output folder. "
+                "Package checks do not replace visual opening in PowerPoint."
             ),
             "parameters": {
                 "type": "object", "additionalProperties": False,
                 "properties": {
                     "topic": {"type": "string", "minLength": 2, "maxLength": 200},
-                    "output_path": {"type": "string", "minLength": 5},
+                    "output_path": {"type": "string", "minLength": 5,
+                                    "description": "Optional. Omit unless the user named a destination."},
                 },
                 "required": ["topic"],
             },
@@ -1786,11 +1792,12 @@ class Mark2Runtime:
         model = (os.getenv("GEMINI_PRESENTATION_MODEL") or "gemini-3.7-flash").strip() if artifact_format == "pptx" else (os.getenv("GEMINI_REPORT_MODEL") or "gemini-3.5-flash-lite").strip()
         automatic = not str(output_path or "").strip()
         if automatic:
-            folder = (self.agent_home / "output" / "reports").resolve(strict=False)
+            section = "presentations" if artifact_format == "pptx" else "reports"
+            folder = (self.agent_home / "output" / section).resolve(strict=False)
             try:
                 folder.relative_to(self.agent_home)
             except ValueError:
-                return "error: default reports folder resolves outside JARVIS"
+                return f"error: default {section} folder resolves outside JARVIS"
             safe_topic = re.sub(r"[^a-z0-9]+", "-", clean_topic.casefold()).strip("-")[:48] or "brief"
             target = folder / f"{safe_topic}-evidence-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}.{artifact_format}"
         else:

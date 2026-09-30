@@ -55,6 +55,39 @@ function switchView(view) {
   if (view === "abilities" && lastOverview) renderAbilities(lastOverview.capabilities || []);
   if (view === "activity" && lastOverview) renderActivity(lastOverview);
   if (view === "files" && lastOverview) renderFiles(lastOverview);
+  if (view === "devices") { refreshMics(); refreshCameras(); }
+}
+
+async function refreshMics() {
+  const select = $("micSelect");
+  try {
+    const data = await api("/api/devices");
+    const chosen = data.selected || "";
+    select.replaceChildren(new Option("System default", ""));
+    for (const input of data.inputs || []) select.add(new Option(`${input.name} · ${input.host}`, input.id));
+    select.value = chosen;
+    setText("micFeedback", chosen && select.value !== chosen
+      ? "Saved mic uses an old partial name or is disconnected. Choose a precise input here."
+      : `${(data.inputs || []).length} input source(s) found. ${chosen ? "Saved microphone selected." : "Using system default."}`);
+  } catch (error) { setText("micFeedback", error.message); }
+}
+
+async function refreshCameras() {
+  const select = $("cameraSelect");
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    setText("cameraFeedback", "Camera listing is unavailable in this WebView.");
+    return;
+  }
+  try {
+    const cameras = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === "videoinput");
+    const selected = new URLSearchParams(location.search).get("spatialCam") || "";
+    select.replaceChildren(new Option("System default", ""));
+    cameras.forEach((device, index) => select.add(new Option(device.label || `Camera ${index + 1}`, device.deviceId)));
+    select.value = selected;
+    setText("cameraFeedback", cameras.length
+      ? `${cameras.length} camera(s) found. Names may require camera access first.`
+      : "No camera detected. Spatial preview still works without one.");
+  } catch (error) { setText("cameraFeedback", error.message); }
 }
 
 function spatialStatus(available) {
@@ -167,7 +200,7 @@ function renderFiles(overview) {
     label.append(element("strong", "", file.name));
     const format = String(file.name || "").split(".").pop().toUpperCase();
     const date = Number.isFinite(Number(file.modified)) ? new Date(file.modified * 1000).toLocaleString() : "";
-    label.append(element("p", "", `${format}  ·  ${file.kind === "presentations" ? "Presentation" : "Report"}  ·  ${Math.max(1, Math.round((file.bytes || 0) / 1024))} KB${date ? "  ·  " + date : ""}`));
+    label.append(element("p", "", `${format}  ·  ${format === "PPTX" ? "Presentation" : "Report"}  ·  ${Math.max(1, Math.round((file.bytes || 0) / 1024))} KB${date ? "  ·  " + date : ""}`));
     const actions = element("div", "file-actions");
     const button = element("button", "", "Open");
     button.type = "button";
@@ -234,6 +267,26 @@ async function poll() {
 document.querySelectorAll(".view-tab").forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
 $("abilitySearch").addEventListener("input", () => renderAbilities((lastOverview || {}).capabilities || []));
 $("spatialView").addEventListener("click", () => switchView("spatial"));
+$("refreshMics").addEventListener("click", refreshMics);
+$("refreshCameras").addEventListener("click", refreshCameras);
+$("saveMic").addEventListener("click", async () => {
+  $("saveMic").disabled = true;
+  try {
+    await api("/api/select-mic", {device: $("micSelect").value});
+    setText("micFeedback", "Saved. Hold HOME for the next capture to test it.");
+  } catch (error) { setText("micFeedback", error.message); }
+  finally { $("saveMic").disabled = false; }
+});
+$("useCamera").addEventListener("click", () => {
+  sessionStorage.setItem("jarvis-draft", $("prompt").value);
+  const next = new URL(location.href);
+  const id = $("cameraSelect").value;
+  if (id) next.searchParams.set("spatialCam", id);
+  else next.searchParams.delete("spatialCam");
+  next.searchParams.set("spatialCamera", "1");
+  next.searchParams.set("spatialView", "1");
+  location.assign(next.href);
+});
 $("spatialCamera").addEventListener("click", () => {
   sessionStorage.setItem("jarvis-draft", $("prompt").value);
   const next = new URL(location.href);

@@ -65,7 +65,7 @@ from backtalk import signals
 from backtalk.brain import WarmBrain
 from backtalk.config import CFG
 from backtalk.desktop_bridge import DesktopBridge
-from backtalk.ears import (Ears, explain_audio_failure, record_held,
+from backtalk.ears import (Ears, explain_audio_failure, input_devices, record_held,
                            warm as warm_ears)
 from backtalk.mouth import (Mouth, preload_local_voice_runtime,
                             warm as warm_mouth)
@@ -725,7 +725,9 @@ async def amain():
 
     speak_task: asyncio.Task | None = None
     typed_q: "queue.Queue[str]" = queue.Queue()
-    desktop_bridge = DesktopBridge(typed_q, CFG["signals_dir"])
+    desktop_bridge = DesktopBridge(typed_q, CFG["signals_dir"],
+                                   list_mics=input_devices,
+                                   select_mic=lambda name: _write_config_key("mic_device", name))
     try:
         desktop_bridge.start()
         log("[desktop] typed-turn bridge ready on 127.0.0.1:8792")

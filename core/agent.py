@@ -49,6 +49,43 @@ def explicit_recycle_request(prompt: str) -> bool:
     return bool(positive and not negated)
 
 
+def explicit_presentation_creation(prompt: str) -> bool:
+    """Recognize a request to make a deck, not a capability question."""
+    value = prompt.casefold()
+    if re.search(r"\b(?:don't|do not|nahi|mat)\b.{0,30}\b(?:make|create|bana\w*)\b", value):
+        return False
+    if re.match(r"\s*(?:how to|how do i|how can i|kese|kaise)\b", value):
+        return False
+    subject = re.search(r"\b(?:presentation|powerpoint|pptx?|slides?|deck)\b", value)
+    action = re.search(r"\b(?:create|make|build|generate|prepare|draft|bana\w*|tayyar|ready)\b", value)
+    return bool(subject and action)
+
+
+def user_named_artifact_destination(prompt: str, output_path: str) -> bool:
+    """Do not let the model invent a path the user never supplied."""
+    request = prompt.casefold().replace("\\", "/")
+    path = str(output_path or "").casefold().replace("\\", "/")
+    if not path:
+        return False
+    if path in request:
+        return True
+    return any(name in request and name in path.split("/")
+               for name in ("desktop", "documents", "downloads"))
+
+
+def normalize_artifact_arguments(name: str, args: dict[str, Any], request: str | None) -> dict[str, Any]:
+    """Use a generated-file destination only when the user chose it."""
+    if (request is None or name not in {
+            "professional_source_report", "professional_topic_report",
+            "professional_source_presentation", "professional_topic_presentation"} or
+            not args.get("output_path") or
+            user_named_artifact_destination(request, str(args["output_path"]))):
+        return args
+    normalized = dict(args)
+    normalized.pop("output_path")
+    return normalized
+
+
 def _child_env() -> dict[str, str]:
     """Return a child-process environment without JARVIS provider secrets."""
     env = dict(os.environ)
@@ -296,6 +333,7 @@ class LocalAgent:
         self._recycle_created_file_requested = False
         self._cancel_requested = False
         self._disable_workflow_requested = False
+        self._current_request: str | None = None
         self.approve = approve
         self.auto_approve = auto_approve
         self.messages: list[dict[str, Any]] = [
@@ -505,6 +543,7 @@ class LocalAgent:
         return False
 
     async def _run_tool(self, name: str, args: dict[str, Any]) -> str:
+        args = normalize_artifact_arguments(name, args, self._current_request)
         try:
             if name == "task_status":
                 return self.tasks.status()
@@ -657,6 +696,11 @@ class LocalAgent:
         checkpoint = list(self.messages)
         self.active_lanes = route_lanes(prompt)
         self.active_tools = select_tools(TOOLS, self.active_lanes)
+        self._current_request = prompt
+        presentation_requested = explicit_presentation_creation(prompt)
+        presentation_attempted = False
+        presentation_failure = ""
+        presentation_nudge_used = False
         self._remember_requested = bool(re.search(
             r"\b(?:remember|yaad|save (?:this|that)|note (?:this|that))\b",
             prompt.casefold(),
@@ -716,6 +760,18 @@ class LocalAgent:
                 self.messages.append(clean)
                 calls = message.get("tool_calls") or []
                 if not calls:
+                    if presentation_requested and not presentation_attempted and not presentation_nudge_used:
+                        self.messages.pop()
+                        nudge = {"role": "system", "content":
+                            "The user explicitly asked you to create a PowerPoint. Call "
+                            "professional_topic_presentation with the requested topic (or "
+                            "professional_source_presentation if they provided public URLs). "
+                            "Omit output_path unless the user named a destination. JARVIS creates "
+                            "its own output shelf. Never invent a missing folder or permission denial."}
+                        self.messages.append(nudge)
+                        transient_nudges.append(nudge)
+                        presentation_nudge_used = True
+                        continue
                     if recovery_pending and recovery_rounds < 2:
                         self.messages.pop()  # Do not speak a premature hand-off.
                         self.messages.append({"role": "system", "content":
@@ -738,6 +794,10 @@ class LocalAgent:
                         plan_nudges += 1
                         continue
                     answer = str(message.get("content") or "")
+                    if presentation_requested and not presentation_attempted:
+                        answer = "I have not created the presentation; the presentation tool was not invoked."
+                    elif presentation_requested and presentation_failure:
+                        answer = "I could not create the presentation. " + presentation_failure
                     if (plan_created_this_turn or continuing_task) and self.tasks.is_active():
                         answer += "\nTask plan remains incomplete; check task_status before claiming completion."
                     self.messages[user_index] = {"role": "user", "content": prompt}
@@ -755,6 +815,9 @@ class LocalAgent:
                         result = f"error: invalid tool arguments: {exc}"
                     else:
                         name = str(function.get("name") or "")
+                        args = normalize_artifact_arguments(name, args, self._current_request)
+                        if name in {"professional_source_presentation", "professional_topic_presentation"}:
+                            presentation_attempted = True
                         signature = name + json.dumps(args, sort_keys=True)
                         if name not in {tool["function"]["name"] for tool in self.active_tools}:
                             result = "error: tool is outside this turn's harness scope"
@@ -767,6 +830,9 @@ class LocalAgent:
                             result = "error: repeated failed action blocked; inspect state or use a different approach"
                         else:
                             result = await self._run_tool(name, args)
+                        if name in {"professional_source_presentation", "professional_topic_presentation"}:
+                            presentation_failure = (str(result) if tool_result_error(result) or
+                                                    str(result).startswith("denied") else "")
                         if name == "create_task_plan" and not tool_result_error(result):
                             plan_created_this_turn = True
                         if name not in {"create_task_plan", "complete_task_step", "task_status", "cancel_task_plan", "workflow_status", "recall_workflows", "disable_workflow"}:
@@ -808,6 +874,7 @@ class LocalAgent:
             self.messages = checkpoint
             raise
         finally:
+            self._current_request = None
             self._remember_requested = False
             self._index_requested = False
             self._forget_document_requested = False

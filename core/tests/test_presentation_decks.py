@@ -66,6 +66,8 @@ class PresentationDeckTests(unittest.TestCase):
                 self.assertIn("example.org/first", " ".join(texts[4]))
                 self.assertIn("other.example.net/second", " ".join(texts[4]))
                 self.assertIn(URLS[0], archive.read("ppt/slides/_rels/slide3.xml.rels").decode())
+                self.assertIn(b'val="F7FAF8"', archive.read("ppt/slides/slide1.xml"))
+                self.assertIn("JARVIS / EVIDENCE BRIEF", texts[0])
                 self.assertIn('TargetMode="External"',
                               archive.read("ppt/slides/_rels/slide5.xml.rels").decode())
                 for slide in slides:
@@ -125,6 +127,8 @@ class PresentationDeckTests(unittest.TestCase):
                 result = json.loads(runtime.professional_topic_presentation("Project update"))
             self.assertEqual(result["slides"], 5)
             self.assertTrue(Path(result["path"]).is_file())
+            self.assertEqual(Path(result["path"]).parent,
+                             Path(folder) / "output" / "presentations")
             self.assertEqual(discover.call_count, 1)
             self.assertEqual(probe.call_count, 2)
             self.assertEqual(gemini.call_count, 1)

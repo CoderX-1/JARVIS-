@@ -109,12 +109,10 @@ def _exchange(connection: socket.socket, host: str, request_target: str,
                 raise UnsafeSource("page is not HTML or plain text")
             if str(response.getheader("Content-Encoding") or "identity").lower() != "identity":
                 raise UnsafeSource("compressed page was not requested")
-            length = response.getheader("Content-Length")
-            if length and int(length) > MAX_PAGE_BYTES:
-                raise UnsafeSource("page exceeds bounded read size")
-            body = response.read(MAX_PAGE_BYTES + 1)
-            if len(body) > MAX_PAGE_BYTES:
-                raise UnsafeSource("page exceeds bounded read size")
+            # Most modern public pages are larger than our evidence window.
+            # Read only the bounded prefix instead of rejecting the whole
+            # page because its declared total Content-Length is larger.
+            body = response.read(MAX_PAGE_BYTES)
         return (
             int(response.status),
             str(response.getheader("Location") or "")[:2_000],

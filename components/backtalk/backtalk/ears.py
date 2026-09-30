@@ -84,6 +84,21 @@ _mic_checked = False
 _mic_device_warned = False
 
 
+def input_devices():
+    """Stable display names for usable capture devices, plus the saved choice."""
+    from backtalk.config import CFG
+    devices = sd.query_devices()
+    hosts = sd.query_hostapis()
+    names = []
+    for device in devices:
+        if device.get("max_input_channels", 0) <= 0:
+            continue
+        host = hosts[device["hostapi"]]["name"]
+        names.append({"id": f'{device["name"]} [{host}]',
+                      "name": device["name"], "host": host})
+    return {"selected": str(CFG.get("mic_device") or ""), "inputs": names}
+
+
 def _mic_index():
     """Resolve mic_device (a device NAME) to an index, or None for the default.
 
@@ -103,6 +118,7 @@ def _mic_index():
         return None
     try:
         devices = sd.query_devices()
+        hosts = sd.query_hostapis()
     except Exception as e:
         log(f"[ears] could not list audio devices ({e}) -- using the "
             f"default mic")
@@ -110,7 +126,7 @@ def _mic_index():
     ins = [(i, d) for i, d in enumerate(devices)
            if d.get("max_input_channels", 0) > 0]
     for i, d in ins:
-        if d["name"] == want:
+        if f'{d["name"]} [{hosts[d["hostapi"]]["name"]}]' == want or d["name"] == want:
             _mic_device_warned = False
             return i
     low = want.lower()

@@ -164,6 +164,9 @@ class BoardCockpitServer:
                 if path == "/assets/files.css":
                     self._send(200, (WEB / "files.css").read_bytes(), "text/css; charset=utf-8")
                     return
+                if path == "/assets/devices.css":
+                    self._send(200, (WEB / "devices.css").read_bytes(), "text/css; charset=utf-8")
+                    return
                 if path == "/assets/spatial.css":
                     self._send(200, (WEB / "spatial.css").read_bytes(), "text/css; charset=utf-8")
                     return
@@ -285,6 +288,15 @@ class BoardCockpitServer:
                     self._json(200, {"health": health, "events": events,
                                      "overview": overview})
                     return
+                if path == "/api/devices":
+                    if not self._authorized():
+                        self._json(403, {"error": "unauthorized"})
+                        return
+                    try:
+                        self._json(200, cockpit.client.devices())
+                    except Exception:
+                        self._json(503, {"error": "audio device service unavailable"})
+                    return
                 self._json(404, {"error": "not found"})
 
             def do_POST(self) -> None:
@@ -330,6 +342,19 @@ class BoardCockpitServer:
                         self._json(503, {"error": "agent did not accept the message"})
                     else:
                         self._json(202, {"accepted": True})
+                    return
+                if path == "/api/select-mic":
+                    name = payload.get("device")
+                    if not isinstance(name, str) or len(name) > 300:
+                        self._json(400, {"error": "invalid microphone"})
+                        return
+                    try:
+                        self._json(200, cockpit.client.select_microphone(name))
+                    except urllib.error.HTTPError as exc:
+                        self._json(exc.code if exc.code in {400, 409} else 503,
+                                   {"error": "microphone no longer available or setting failed"})
+                    except Exception:
+                        self._json(503, {"error": "audio device service unavailable"})
                     return
                 if path == "/api/open-report":
                     file_id = payload.get("id")

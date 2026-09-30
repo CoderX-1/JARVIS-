@@ -19,10 +19,13 @@ from queue import Queue
 
 
 class DesktopBridge:
-    def __init__(self, typed_queue: Queue, signals_dir: str | Path, port: int = 8792):
+    def __init__(self, typed_queue: Queue, signals_dir: str | Path, port: int = 8792,
+                 list_mics=None, select_mic=None):
         self.typed_queue = typed_queue
         self.token_path = Path(signals_dir) / ".desktop_bridge_token"
         self.port = port
+        self.list_mics = list_mics
+        self.select_mic = select_mic
         self.token = secrets.token_urlsafe(32)
         self.events = deque(maxlen=80)
         self.sequence = 0
@@ -67,6 +70,13 @@ class DesktopBridge:
                 if not self._authorized():
                     self._send(403, {"error": "unauthorized"})
                     return
+                if self.path == "/devices":
+                    try:
+                        self._send(200, bridge.list_mics() if bridge.list_mics else
+                                   {"selected": "", "inputs": []})
+                    except Exception:
+                        self._send(503, {"error": "audio devices unavailable"})
+                    return
                 if self.path != "/events":
                     self._send(404, {"error": "not found"})
                     return
@@ -79,7 +89,7 @@ class DesktopBridge:
                 if not self._authorized():
                     self._send(403, {"error": "unauthorized"})
                     return
-                if self.path != "/turn":
+                if self.path not in {"/turn", "/mic"}:
                     self._send(404, {"error": "not found"})
                     return
                 try:
@@ -91,6 +101,23 @@ class DesktopBridge:
                     return
                 try:
                     payload = json.loads(self.rfile.read(size))
+                    if self.path == "/mic":
+                        selected = payload["device"]
+                        if not isinstance(selected, str) or len(selected) > 300:
+                            raise ValueError("invalid mic")
+                        try:
+                            available = bridge.list_mics() if bridge.list_mics else {"inputs": []}
+                        except Exception:
+                            self._send(503, {"error": "audio devices unavailable"})
+                            return
+                        if selected and selected not in {d["id"] for d in available["inputs"]}:
+                            self._send(409, {"error": "microphone disconnected; refresh devices"})
+                            return
+                        if not bridge.select_mic or not bridge.select_mic(selected):
+                            self._send(503, {"error": "microphone setting could not be saved"})
+                            return
+                        self._send(200, {"selected": selected})
+                        return
                     message = payload["text"]
                     if not isinstance(message, str):
                         raise ValueError("text must be a string")

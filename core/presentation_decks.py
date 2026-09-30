@@ -64,14 +64,32 @@ def _shape(number: int, value: Any, x: int, y: int, w: int, h: int,
             '</p:txBody></p:sp>')
 
 
+def _bar(number: int, x: int, y: int, w: int, h: int, color: str) -> str:
+    """Editable vector accent, deliberately not a remote image or icon."""
+    return (f'<p:sp><p:nvSpPr><p:cNvPr id="{number}" name="Accent {number}"/>'
+            '<p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>'
+            f'<a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{w}" cy="{h}"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+            f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
+            '<a:ln><a:noFill/></a:ln></p:spPr></p:sp>')
+
+
 def _slide(shapes: list[str]) -> bytes:
     return (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             f'<p:sld xmlns:p="{P}" xmlns:a="{A}" xmlns:r="{R}">'
-            '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/>'
+            '<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="F7FAF8"/>'
+            '</a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree>'
+            '<p:nvGrpSpPr><p:cNvPr id="1" name=""/>'
             '<p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr>'
             '<a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
             '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm>'
-            '</p:grpSpPr>' + "".join(shapes) +
+            '</p:grpSpPr>' +
+            _bar(900, 0, 0, W, 70_000, "0A6B63") +
+            _bar(901, 760_000, 330_000, 1_000_000, 52_000, "0A6B63") +
+            _bar(902, 760_000, 6_590_000, 10_650_000, 17_000, "C5D8D0") +
+            "".join(shapes) +
+            _shape(903, "JARVIS  /  EVIDENCE BRIEF", 760_000, 6_620_000,
+                   10_650_000, 170_000, 9, "536579") +
             '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/>'
             '</p:clrMapOvr></p:sld>').encode("utf-8")
 

@@ -9,6 +9,7 @@
   <title>JARVIS — Board cockpit</title>
   <link rel="stylesheet" href="/assets/app.css">
   <link rel="stylesheet" href="/assets/files.css">
+  <link rel="stylesheet" href="/assets/devices.css">
   <link rel="stylesheet" href="/assets/spatial.css">
   <script type="importmap">__JARVIS_IMPORT_MAP__</script>
   <script defer src="/assets/board-core.js"></script>
@@ -29,6 +30,7 @@
         <button class="view-tab" data-view="activity">Activity</button>
         <button class="view-tab" data-view="abilities">Abilities</button>
         <button class="view-tab" data-view="files">Files</button>
+        <button class="view-tab" data-view="devices">Devices</button>
         <button class="view-tab" data-view="android">Android</button>
       </nav>
       <div class="connection" id="connection" role="status" aria-live="polite">
@@ -96,6 +98,28 @@
           <p class="device-state" id="androidStatus">Checking local setup…</p>
           <button class="secondary-action" id="prepareAndroid" type="button">Prepare a phone-status request</button>
           <p class="quiet">This fills the chat box. It does not contact the phone until you send it.</p>
+        </div>
+
+        <div class="view info-view" id="view-devices" hidden>
+          <div class="view-heading"><h1>Input devices</h1><p>Choose what JARVIS hears and which camera Spatial uses. Changes are scoped to this install.</p></div>
+          <div class="device-grid">
+            <section class="device-panel" aria-labelledby="microphoneHeading">
+              <span class="device-kicker">VOICE / 01</span><h2 id="microphoneHeading">Microphone</h2>
+              <p>Saved by device name. Push-to-talk uses the new mic on the next press.</p>
+              <label for="micSelect">Input source</label>
+              <select id="micSelect"><option value="">System default</option></select>
+              <div class="device-actions"><button id="saveMic" type="button">Use microphone</button><button id="refreshMics" type="button">Refresh</button></div>
+              <p class="device-feedback" id="micFeedback" role="status">Checking microphonesâ€¦</p>
+            </section>
+            <section class="device-panel" aria-labelledby="cameraHeading">
+              <span class="device-kicker">SPATIAL / 02</span><h2 id="cameraHeading">Tracking camera</h2>
+              <p>Camera access is requested only when you turn on hand tracking. Preview stays camera-free.</p>
+              <label for="cameraSelect">Video source</label>
+              <select id="cameraSelect"><option value="">System default</option></select>
+              <div class="device-actions"><button id="useCamera" type="button">Use in Spatial</button><button id="refreshCameras" type="button">Refresh</button></div>
+              <p class="device-feedback" id="cameraFeedback" role="status">Camera labels may appear after access is allowed.</p>
+            </section>
+          </div>
         </div>
       </section>
 

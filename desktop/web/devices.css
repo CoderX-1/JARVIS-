@@ -1,0 +1,14 @@
+.device-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px;max-width:950px}
+.device-panel{padding:22px;background:linear-gradient(145deg,#0d2117,#09130e 72%);border:1px solid #275139;border-radius:8px;min-height:300px}
+.device-kicker{color:var(--mint);font-size:10px;font-weight:700;letter-spacing:.22em}
+.device-panel h2{font-size:21px;font-weight:500;color:var(--ink);letter-spacing:0;text-transform:none;margin:15px 0 8px}
+.device-panel p{color:var(--muted);font-size:12px;line-height:1.55;margin:0 0 22px}
+.device-panel label{display:block;color:var(--ink);font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:9px}
+.device-panel select{display:block;width:100%;padding:10px 12px;background:#07150e;border:1px solid #356b48;border-radius:5px;color:var(--ink);outline:none}
+.device-panel select:focus-visible{border-color:var(--mint)}
+.device-actions{display:flex;gap:9px;margin-top:13px}
+.device-actions button{padding:8px 12px;border:1px solid #397e55;border-radius:5px;color:var(--mint);background:#102b1b}
+.device-actions button:first-child{background:var(--mint);color:#051009;font-weight:700}
+.device-actions button:disabled{opacity:.45;cursor:default}
+.device-panel .device-feedback{margin-top:15px;color:var(--amber);min-height:36px}
+@media(max-width:800px){.device-grid{grid-template-columns:1fr}}
